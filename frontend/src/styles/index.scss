@@ -8,3 +8,10 @@
   flex-direction: column;
   min-height: 100%;
 }
+
+.content {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: var(--app-space-5);
+}
