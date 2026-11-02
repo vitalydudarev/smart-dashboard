@@ -1,0 +1,46 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-surface) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-5);
+  height: var(--app-header-height);
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 var(--app-space-5);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.brand-mark {
+  color: var(--app-accent);
+}
+
+.header-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--app-space-2);
+  margin-left: auto;
+}
+
+@media (width <= 720px) {
+  .header-inner {
+    gap: var(--app-space-3);
+    padding: 0 var(--app-space-4);
+  }
+}

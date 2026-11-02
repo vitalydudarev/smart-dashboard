@@ -1,0 +1,36 @@
+.theme-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface-sunken);
+}
+
+.segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 30px;
+  padding: 0 var(--app-space-3);
+  border: 0;
+  border-radius: var(--app-radius-sm);
+  background: transparent;
+  color: var(--app-fg-muted);
+  cursor: pointer;
+  transition:
+    background var(--app-transition),
+    color var(--app-transition),
+    box-shadow var(--app-transition);
+}
+
+.segment:hover:not(.segment--selected) {
+  color: var(--app-fg);
+}
+
+.segment--selected {
+  background: var(--app-surface);
+  color: var(--app-fg);
+  box-shadow: var(--app-shadow-sm);
+}

@@ -1,0 +1,10 @@
+/* Global stylesheet: design tokens and the document reset. Component styles live next to their components. */
+
+@use 'tokens';
+@use 'base';
+
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}

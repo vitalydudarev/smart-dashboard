@@ -1,0 +1,121 @@
+/* Design tokens. Every colour, radius, shadow and spacing step in the app resolves to one of
+   these custom properties, so the whole look can be retuned from this one file. */
+
+:root {
+  color-scheme: light dark;
+
+  --app-font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --app-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Type scale */
+  --app-text-xs: 0.75rem;
+  --app-text-sm: 0.8125rem;
+  --app-text-base: 0.875rem;
+  --app-text-md: 1rem;
+  --app-text-lg: 1.125rem;
+  --app-text-xl: 1.375rem;
+
+  /* Spacing */
+  --app-space-1: 0.25rem;
+  --app-space-2: 0.5rem;
+  --app-space-3: 0.75rem;
+  --app-space-4: 1rem;
+  --app-space-5: 1.5rem;
+  --app-space-6: 2rem;
+  --app-space-7: 3rem;
+
+  /* Radii */
+  --app-radius-sm: 6px;
+  --app-radius: 10px;
+  --app-radius-lg: 14px;
+  --app-radius-pill: 999px;
+
+  --app-header-height: 60px;
+
+  --app-transition: 140ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Light palette */
+  --app-bg: #f6f7f9;
+  --app-surface: #ffffff;
+  --app-surface-sunken: #f1f3f5;
+  --app-surface-hover: #f4f5f7;
+  --app-border: #e5e8eb;
+  --app-border-strong: #d3d8de;
+
+  --app-fg: #16181d;
+  --app-fg-muted: #5c636e;
+  --app-fg-subtle: #8a919c;
+
+  --app-accent: #4f46e5;
+  --app-accent-hover: #4338ca;
+  --app-accent-active: #3730a3;
+  --app-accent-fg: #ffffff;
+  --app-accent-soft: #eef2ff;
+  --app-accent-soft-fg: #3730a3;
+
+  --app-success: #047857;
+  --app-success-soft: #ecfdf5;
+  --app-danger: #dc2626;
+  --app-danger-hover: #b91c1c;
+  --app-danger-fg: #ffffff;
+  --app-danger-soft: #fef2f2;
+  --app-warning: #b45309;
+  --app-warning-soft: #fffbeb;
+
+  --app-focus-ring: 0 0 0 2px var(--app-surface), 0 0 0 4px var(--app-accent);
+
+  --app-shadow-sm: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 8%);
+  --app-shadow: 0 2px 4px -2px rgb(16 24 40 / 6%), 0 4px 12px -2px rgb(16 24 40 / 10%);
+  --app-shadow-lg: 0 8px 16px -6px rgb(16 24 40 / 12%), 0 20px 40px -8px rgb(16 24 40 / 16%);
+
+  --app-scrim: rgb(16 24 40 / 45%);
+}
+
+@mixin dark-palette {
+  --app-bg: #0e1013;
+  --app-surface: #17191e;
+  --app-surface-sunken: #121419;
+  --app-surface-hover: #1e2127;
+  --app-border: #282c33;
+  --app-border-strong: #3a3f49;
+
+  --app-fg: #e9ecef;
+  --app-fg-muted: #9aa2ad;
+  --app-fg-subtle: #6d7581;
+
+  --app-accent: #6366f1;
+  --app-accent-hover: #7c7ff5;
+  --app-accent-active: #8b8df7;
+  --app-accent-fg: #ffffff;
+  --app-accent-soft: #1e1b4b;
+  --app-accent-soft-fg: #c7d2fe;
+
+  --app-success: #34d399;
+  --app-success-soft: #06281f;
+  --app-danger: #f87171;
+  --app-danger-hover: #fca5a5;
+  --app-danger-fg: #2a0f0f;
+  --app-danger-soft: #2a1214;
+  --app-warning: #fbbf24;
+  --app-warning-soft: #2a1f06;
+
+  --app-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --app-shadow: 0 2px 6px rgb(0 0 0 / 45%);
+  --app-shadow-lg: 0 12px 32px rgb(0 0 0 / 55%);
+
+  --app-scrim: rgb(0 0 0 / 65%);
+}
+
+/* Follow the OS unless the user picked a theme explicitly. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    @include dark-palette;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  @include dark-palette;
+}
