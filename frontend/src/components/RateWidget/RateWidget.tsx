@@ -1,21 +1,23 @@
+import { ChevronRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { type ExchangeRate, fetchEurUsdRate } from './rateApi.ts'
+import { Link } from 'react-router'
+import { type LatestRate, fetchLatestRate } from '../../api/rates.ts'
+import { formatDate, formatRate } from '../../utils/format.ts'
 import './RateWidget.scss'
 
-// UTC because a date-only string parses as UTC midnight, which is the previous day west of Greenwich.
-const dateFormat = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: 'UTC' })
+const base = 'EUR'
+const quote = 'USD'
+const pair = `${base}/${quote}`
 
-type RateState =
-  | { status: 'loading' }
-  | { status: 'error' }
-  | { status: 'loaded'; rate: ExchangeRate }
+type RateState = { status: 'loading' } | { status: 'error' } | { status: 'loaded'; rate: LatestRate }
 
+/** The headline EUR/USD rate; opens the rates page for that pair. */
 function RateWidget() {
   const [state, setState] = useState<RateState>({ status: 'loading' })
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchEurUsdRate(controller.signal)
+    fetchLatestRate(base, quote, controller.signal)
       .then((rate) => setState({ status: 'loaded', rate }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
@@ -26,28 +28,31 @@ function RateWidget() {
     return () => controller.abort()
   }, [])
 
-  if (state.status !== 'loaded') {
-    return (
-      <section className="rate-widget" aria-label="EUR/USD exchange rate" aria-busy={state.status === 'loading'}>
-        <span className="rate-widget-pair">EUR/USD</span>
-        <span className="rate-widget-rate">—</span>
-        <span className="rate-widget-date">
-          {state.status === 'loading' ? 'Loading…' : 'Rate unavailable'}
-        </span>
-      </section>
-    )
-  }
-
-  const { pair, rate, date } = state.rate
-
   return (
-    <section className="rate-widget" aria-label={`${pair} exchange rate`}>
-      <span className="rate-widget-pair">{pair}</span>
-      <span className="rate-widget-rate">{rate.toFixed(4)}</span>
-      <time className="rate-widget-date" dateTime={date}>
-        {dateFormat.format(new Date(date))}
-      </time>
-    </section>
+    <Link
+      className="rate-widget"
+      to={`/rates?base=${base}&quote=${quote}`}
+      aria-label={`${pair} exchange rate. View history and other currencies`}
+      aria-busy={state.status === 'loading'}
+    >
+      <span className="rate-widget-pair">
+        {pair}
+        <ChevronRight className="rate-widget-chevron" size={18} aria-hidden="true" />
+      </span>
+      {state.status === 'loaded' ? (
+        <>
+          <span className="rate-widget-rate">{formatRate(state.rate.rate)}</span>
+          <time className="rate-widget-date" dateTime={state.rate.date}>
+            {formatDate(state.rate.date)}
+          </time>
+        </>
+      ) : (
+        <>
+          <span className="rate-widget-rate">—</span>
+          <span className="rate-widget-date">{state.status === 'loading' ? 'Loading…' : 'Rate unavailable'}</span>
+        </>
+      )}
+    </Link>
   )
 }
 

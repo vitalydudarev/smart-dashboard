@@ -2,6 +2,7 @@
 
 @use 'tokens';
 @use 'base';
+@use 'segmented';
 
 #root {
   display: flex;

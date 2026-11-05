@@ -1,0 +1,252 @@
+.rates-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-4);
+  max-width: 960px;
+}
+
+.rates-back {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--app-space-1);
+  color: var(--app-fg-muted);
+  font-size: var(--app-text-sm);
+  transition: color var(--app-transition);
+
+  &:hover {
+    color: var(--app-fg);
+  }
+}
+
+.rates-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-3);
+
+  h1 {
+    font-size: var(--app-text-xl);
+  }
+}
+
+.rates-pair {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+}
+
+.rates-select select,
+.rates-custom input {
+  height: 38px;
+  padding: 0 var(--app-space-3);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  transition: border-color var(--app-transition);
+
+  &:hover {
+    border-color: var(--app-border-strong);
+  }
+}
+
+.rates-select select {
+  max-width: 190px;
+  cursor: pointer;
+}
+
+.rates-swap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  color: var(--app-fg-muted);
+  cursor: pointer;
+  transition:
+    border-color var(--app-transition),
+    color var(--app-transition);
+
+  &:hover {
+    border-color: var(--app-border-strong);
+    color: var(--app-fg);
+  }
+}
+
+.rates-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--app-space-3);
+}
+
+.rates-range .segment {
+  font-size: var(--app-text-sm);
+  font-weight: 500;
+}
+
+.rates-custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--app-space-3);
+
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--app-space-2);
+    color: var(--app-fg-muted);
+    font-size: var(--app-text-sm);
+  }
+
+  input {
+    color: var(--app-fg);
+  }
+}
+
+.rates-hint {
+  color: var(--app-fg-muted);
+  font-size: var(--app-text-sm);
+}
+
+.rates-card {
+  padding: var(--app-space-5);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.rates-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-4);
+  transition: opacity var(--app-transition);
+}
+
+.rates-body--stale {
+  opacity: 0.5;
+}
+
+.rates-message {
+  padding: var(--app-space-6) 0;
+  color: var(--app-fg-muted);
+  text-align: center;
+}
+
+.rates-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--app-space-4);
+}
+
+.rates-summary-pair {
+  color: var(--app-fg-muted);
+  font-size: var(--app-text-md);
+  font-weight: 500;
+}
+
+.rates-summary-rate {
+  font-size: var(--app-text-2xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.rates-summary-date,
+.rates-period {
+  color: var(--app-fg-muted);
+  font-size: var(--app-text-sm);
+}
+
+.rates-stats {
+  display: flex;
+  gap: var(--app-space-5);
+  margin: 0;
+
+  dt {
+    color: var(--app-fg-muted);
+    font-size: var(--app-text-xs);
+  }
+
+  dd {
+    margin: 0;
+    font-weight: 600;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.rates-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.rates-table {
+  summary {
+    color: var(--app-fg-muted);
+    font-size: var(--app-text-sm);
+    cursor: pointer;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
+  th,
+  td {
+    padding: var(--app-space-1) var(--app-space-3);
+    border-bottom: 1px solid var(--app-border);
+    text-align: left;
+  }
+
+  th {
+    position: sticky;
+    top: 0;
+    background: var(--app-surface);
+    color: var(--app-fg-muted);
+    font-size: var(--app-text-xs);
+    font-weight: 500;
+  }
+
+  th:last-child,
+  td:last-child {
+    text-align: right;
+  }
+}
+
+.rates-table-scroll {
+  max-height: 320px;
+  margin-top: var(--app-space-2);
+  overflow-y: auto;
+}
+
+@media (width <= 720px) {
+  .rates-pair {
+    width: 100%;
+  }
+
+  .rates-select {
+    flex: 1;
+    min-width: 0;
+
+    select {
+      width: 100%;
+      max-width: none;
+    }
+  }
+
+  .rates-card {
+    padding: var(--app-space-4);
+  }
+}

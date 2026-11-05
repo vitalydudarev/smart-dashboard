@@ -1,6 +1,5 @@
 import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react'
 import { useThemePreference, type ThemePreference } from '../../theme/useThemePreference.ts'
-import './ThemeToggle.scss'
 
 const options: readonly { value: ThemePreference; label: string; icon: LucideIcon }[] = [
   { value: 'system', label: 'Auto (match system)', icon: Monitor },
@@ -13,7 +12,7 @@ function ThemeToggle() {
   const [preference, setPreference] = useThemePreference()
 
   return (
-    <div className="theme-toggle" role="group" aria-label="Colour theme">
+    <div className="segmented" role="group" aria-label="Colour theme">
       {options.map(({ value, label, icon: Icon }) => (
         <button
           key={value}

@@ -1,4 +1,5 @@
 import { MapPin } from 'lucide-react'
+import { Link } from 'react-router'
 import ThemeToggle from '../ThemeToggle/ThemeToggle.tsx'
 import './Navbar.scss'
 
@@ -6,10 +7,10 @@ function Navbar() {
   return (
     <header className="header">
       <div className="header-inner">
-        <span className="brand">
+        <Link className="brand" to="/">
           <MapPin className="brand-mark" size={18} />
           <span>Smart Dashboard</span>
-        </span>
+        </Link>
 
         <div className="header-end">
           <ThemeToggle />
