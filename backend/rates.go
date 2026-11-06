@@ -25,6 +25,17 @@ var currencies = []Currency{
 	{Code: "CNY", Name: "Chinese Yuan"},
 	{Code: "SEK", Name: "Swedish Krona"},
 	{Code: "PLN", Name: "Polish Zloty"},
+	// Served by the National Bank of the Republic of Belarus rather than the mock store.
+	{Code: "BYN", Name: "Belarusian Ruble"},
+}
+
+func isKnownCurrency(code string) bool {
+	for _, currency := range currencies {
+		if currency.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 // Typical units of each currency per US dollar. The mock series wander around these values.
@@ -58,10 +69,10 @@ type rateStore struct {
 // currency code, so a given day always has the same rate regardless of when the server started.
 func newRateStore(start, end time.Time) *rateStore {
 	days := daysBetween(start, end) + 1
-	store := &rateStore{start: start, days: days, perUSD: make(map[string][]float64, len(currencies))}
+	store := &rateStore{start: start, days: days, perUSD: make(map[string][]float64, len(usdAnchors))}
 
-	for _, currency := range currencies {
-		store.perUSD[currency.Code] = randomWalk(currency.Code, usdAnchors[currency.Code], days)
+	for code, anchor := range usdAnchors {
+		store.perUSD[code] = randomWalk(code, anchor, days)
 	}
 
 	return store

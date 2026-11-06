@@ -3,12 +3,19 @@ export interface Currency {
   name: string
 }
 
+/** Where a rate comes from, e.g. the National Bank of the Republic of Belarus for BYN pairs. */
+export interface RateSource {
+  id: string
+  name: string
+}
+
 export interface LatestRate {
   base: string
   quote: string
   rate: number
-  /** The day the rate was loaded for, as YYYY-MM-DD. */
+  /** The day the rate is for, as YYYY-MM-DD. */
   date: string
+  source: RateSource
 }
 
 export interface RatePoint {
@@ -23,7 +30,9 @@ export interface RateHistory {
   /** The period actually returned, after the backend clamps it to the days it has data for. */
   from: string
   to: string
+  /** Days the source published no rate for are left out. */
   points: RatePoint[]
+  source: RateSource
 }
 
 export type RangePreset = '7d' | '30d' | '6m' | '1y' | '5y'
@@ -48,8 +57,14 @@ export function fetchCurrencies(signal?: AbortSignal): Promise<Currency[]> {
   return getJson('/api/currencies', {}, signal)
 }
 
-export function fetchLatestRate(base: string, quote: string, signal?: AbortSignal): Promise<LatestRate> {
-  return getJson('/api/rates/latest', { base, quote }, signal)
+/** The rate on a YYYY-MM-DD date, or the latest one when no date is given. */
+export function fetchLatestRate(
+  base: string,
+  quote: string,
+  signal?: AbortSignal,
+  date?: string,
+): Promise<LatestRate> {
+  return getJson('/api/rates/latest', date ? { base, quote, date } : { base, quote }, signal)
 }
 
 export function fetchRateHistory(

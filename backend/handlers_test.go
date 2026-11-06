@@ -11,7 +11,7 @@ import (
 var testLatest = time.Date(2026, time.November, 5, 0, 0, 0, 0, time.UTC)
 
 func newTestServer() http.Handler {
-	return (&server{store: newRateStore(historyStart, testLatest)}).routes()
+	return newServer(&mockProvider{store: newRateStore(historyStart, testLatest)}).routes()
 }
 
 func get(t *testing.T, handler http.Handler, target string, body any) int {

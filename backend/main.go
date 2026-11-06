@@ -16,8 +16,11 @@ func main() {
 		addr = ":" + port
 	}
 
-	// The history ends on the day the server starts; a restart picks up any days since.
-	srv := &server{store: newRateStore(historyStart, today())}
+	// The mocked history ends on the day the server starts; a restart picks up any days since.
+	srv := newServer(
+		newNBRBProvider(newNBRBClient(nbrbBaseURL)),
+		&mockProvider{store: newRateStore(historyStart, today())},
+	)
 
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, srv.routes()))

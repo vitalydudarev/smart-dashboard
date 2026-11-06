@@ -220,9 +220,14 @@ function RatesPage() {
 
       <section className="rates-card" aria-busy={loading} aria-label={`${pair} rate history`}>
         {error ? (
-          <p className="rates-message" role="alert">
-            {error}
-          </p>
+          // A source that is down, or has no rate for the period, reads as a missing rate.
+          <div className="rates-summary" role="alert">
+            <div>
+              <div className="rates-summary-pair">{pair}</div>
+              <div className="rates-summary-rate">—</div>
+              <span className="rates-summary-date">{error}</span>
+            </div>
+          </div>
         ) : !history ? (
           <p className="rates-message">Loading…</p>
         ) : (
@@ -262,7 +267,8 @@ function RatesPage() {
             <RateChart points={points} label={pair} />
 
             <p className="rates-period">
-              {formatDate(history.from)} – {formatDate(history.to)} · {points.length} days
+              {formatDate(history.from)} – {formatDate(history.to)} · {points.length} days · Source:{' '}
+              {history.source.name}
             </p>
 
             <details className="rates-table">

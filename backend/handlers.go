@@ -11,13 +11,18 @@ import (
 )
 
 type server struct {
-	store *rateStore
+	// The first provider that supports a pair serves it.
+	providers []rateProvider
+}
+
+func newServer(providers ...rateProvider) *server {
+	return &server{providers: providers}
 }
 
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/currencies", s.handleCurrencies)
-	mux.HandleFunc("GET /api/rates/latest", s.handleLatestRate)
+	mux.HandleFunc("GET /api/rates/latest", s.handleRate)
 	mux.HandleFunc("GET /api/rates/history", s.handleRateHistory)
 	return mux
 }
@@ -26,8 +31,9 @@ type latestRateResponse struct {
 	Base  string  `json:"base"`
 	Quote string  `json:"quote"`
 	Rate  float64 `json:"rate"`
-	// The day the rate was loaded for, as YYYY-MM-DD.
-	Date string `json:"date"`
+	// The day the rate is for, as YYYY-MM-DD.
+	Date   string `json:"date"`
+	Source Source `json:"source"`
 }
 
 type rateHistoryResponse struct {
@@ -36,6 +42,7 @@ type rateHistoryResponse struct {
 	From   string      `json:"from"`
 	To     string      `json:"to"`
 	Points []RatePoint `json:"points"`
+	Source Source      `json:"source"`
 }
 
 func (s *server) handleCurrencies(w http.ResponseWriter, _ *http.Request) {
@@ -43,19 +50,43 @@ func (s *server) handleCurrencies(w http.ResponseWriter, _ *http.Request) {
 }
 
 // GET /api/rates/latest?base=EUR&quote=USD
-func (s *server) handleLatestRate(w http.ResponseWriter, r *http.Request) {
-	base, quote, err := s.pairParams(r.URL.Query())
+// GET /api/rates/latest?base=USD&quote=BYN&date=2025-10-10
+func (s *server) handleRate(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+
+	base, quote, provider, err := s.pairParams(query)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	day := s.store.latest()
+	earliest, latest := provider.bounds()
+	day := latest
+	if raw := query.Get("date"); raw != "" {
+		day, err = time.Parse(dateLayout, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "date must be a date as YYYY-MM-DD")
+			return
+		}
+		if day.Before(earliest) || day.After(latest) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("rates are available from %s to %s",
+				earliest.Format(dateLayout), latest.Format(dateLayout)))
+			return
+		}
+	}
+
+	rate, err := provider.rate(r.Context(), base, quote, day)
+	if err != nil {
+		writeProviderError(w, provider, err)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, latestRateResponse{
-		Base:  base,
-		Quote: quote,
-		Rate:  s.store.rate(base, quote, day),
-		Date:  day.Format(dateLayout),
+		Base:   base,
+		Quote:  quote,
+		Rate:   rate,
+		Date:   day.Format(dateLayout),
+		Source: provider.source(),
 	})
 }
 
@@ -64,15 +95,21 @@ func (s *server) handleLatestRate(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleRateHistory(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
-	base, quote, err := s.pairParams(query)
+	base, quote, provider, err := s.pairParams(query)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	from, to, err := s.period(query)
+	from, to, err := period(query, provider)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	points, err := provider.history(r.Context(), base, quote, from, to)
+	if err != nil {
+		writeProviderError(w, provider, err)
 		return
 	}
 
@@ -81,29 +118,35 @@ func (s *server) handleRateHistory(w http.ResponseWriter, r *http.Request) {
 		Quote:  quote,
 		From:   from.Format(dateLayout),
 		To:     to.Format(dateLayout),
-		Points: s.store.history(base, quote, from, to),
+		Points: points,
+		Source: provider.source(),
 	})
 }
 
-func (s *server) pairParams(query url.Values) (base, quote string, err error) {
+func (s *server) pairParams(query url.Values) (base, quote string, provider rateProvider, err error) {
 	base, quote = query.Get("base"), query.Get("quote")
 
 	for _, code := range []string{base, quote} {
-		if !s.store.isKnown(code) {
-			return "", "", fmt.Errorf("unknown currency %q", code)
+		if !isKnownCurrency(code) {
+			return "", "", nil, fmt.Errorf("unknown currency %q", code)
 		}
 	}
 	if base == quote {
-		return "", "", errors.New("base and quote must differ")
+		return "", "", nil, errors.New("base and quote must differ")
 	}
 
-	return base, quote, nil
+	for _, provider := range s.providers {
+		if provider.supports(base, quote) {
+			return base, quote, provider, nil
+		}
+	}
+	return "", "", nil, fmt.Errorf("no rates are available for %s/%s", base, quote)
 }
 
-// period resolves either a preset range, counted back from the latest day, or an explicit
-// from/to pair, which is clamped to the days the store has data for.
-func (s *server) period(query url.Values) (from, to time.Time, err error) {
-	latest := s.store.latest()
+// period resolves either a preset range, counted back from the provider's latest day, or an
+// explicit from/to pair, which is clamped to the days the provider has rates for.
+func period(query url.Values, provider rateProvider) (from, to time.Time, err error) {
+	earliest, latest := provider.bounds()
 
 	if preset := query.Get("range"); preset != "" {
 		switch preset {
@@ -120,7 +163,7 @@ func (s *server) period(query url.Values) (from, to time.Time, err error) {
 		default:
 			return time.Time{}, time.Time{}, fmt.Errorf("unknown range %q", preset)
 		}
-		return maxTime(from, s.store.earliest()), latest, nil
+		return maxTime(from, earliest), latest, nil
 	}
 
 	from, err = time.Parse(dateLayout, query.Get("from"))
@@ -135,10 +178,10 @@ func (s *server) period(query url.Values) (from, to time.Time, err error) {
 		return time.Time{}, time.Time{}, errors.New("from must not be after to")
 	}
 
-	from, to = maxTime(from, s.store.earliest()), minTime(to, latest)
+	from, to = maxTime(from, earliest), minTime(to, latest)
 	if from.After(to) {
 		return time.Time{}, time.Time{}, fmt.Errorf("rates are available from %s to %s",
-			s.store.earliest().Format(dateLayout), latest.Format(dateLayout))
+			earliest.Format(dateLayout), latest.Format(dateLayout))
 	}
 
 	return from, to, nil
@@ -156,6 +199,16 @@ func minTime(a, b time.Time) time.Time {
 		return a
 	}
 	return b
+}
+
+// writeProviderError reports a provider failure: 404 when it has no rate, 502 when it is unreachable.
+func writeProviderError(w http.ResponseWriter, provider rateProvider, err error) {
+	if errors.Is(err, errNoRate) {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("%s has no rate for that day", provider.source().Name))
+		return
+	}
+	log.Printf("%s: %v", provider.source().ID, err)
+	writeError(w, http.StatusBadGateway, fmt.Sprintf("%s is unavailable", provider.source().Name))
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
