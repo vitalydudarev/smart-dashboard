@@ -49,7 +49,7 @@ func (s *server) handleCurrencies(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, currencies)
 }
 
-// GET /api/rates/latest?base=EUR&quote=USD
+// GET /api/rates/latest?base=EUR&quote=USD (today, or yesterday when today has no rate yet)
 // GET /api/rates/latest?base=USD&quote=BYN&date=2025-10-10
 func (s *server) handleRate(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
@@ -76,6 +76,11 @@ func (s *server) handleRate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rate, err := provider.rate(r.Context(), base, quote, day)
+	// Without a date, today's rate may not be published yet; fall back to the day before.
+	if errors.Is(err, errNoRate) && query.Get("date") == "" && day.After(earliest) {
+		day = day.AddDate(0, 0, -1)
+		rate, err = provider.rate(r.Context(), base, quote, day)
+	}
 	if err != nil {
 		writeProviderError(w, provider, err)
 		return

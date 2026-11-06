@@ -5,13 +5,13 @@ import { type LatestRate, fetchLatestRate } from '../../api/rates.ts'
 import { formatDate, formatRate } from '../../utils/format.ts'
 import './RateWidget.scss'
 
-const base = 'EUR'
-const quote = 'USD'
+const base = 'USD'
+const quote = 'BYN'
 const pair = `${base}/${quote}`
 
 type RateState = { status: 'loading' } | { status: 'error' } | { status: 'loaded'; rate: LatestRate }
 
-/** The headline EUR/USD rate; opens the rates page for that pair. */
+/** The headline USD/BYN rate (today's, or yesterday's until today's is published); opens the rates page for that pair. */
 function RateWidget() {
   const [state, setState] = useState<RateState>({ status: 'loading' })
 

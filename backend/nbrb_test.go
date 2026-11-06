@@ -27,6 +27,8 @@ type fakeNBRB struct {
 	requests       atomic.Int32
 	failCurrencies atomic.Bool
 	down           atomic.Bool
+	// unpublished is a YYYY-MM-DD day the fake has no rate for yet.
+	unpublished atomic.Value
 }
 
 func (f *fakeNBRB) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +66,10 @@ func (f *fakeNBRB) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/rates/"):
 		id := strings.TrimPrefix(r.URL.Path, "/rates/")
 		day, _ := time.Parse(dateLayout, query.Get("ondate"))
+		if f.unpublished.Load() == query.Get("ondate") {
+			http.NotFound(w, r)
+			return
+		}
 		curID, scale := 0, 1
 		switch {
 		case id == "431" || (query.Get("parammode") == "2" && id == "USD"):
@@ -120,6 +126,25 @@ func TestNBRBLatestIsTodayInMinsk(t *testing.T) {
 	get(t, handler, "/api/rates/latest?base=USD&quote=BYN", &got)
 	if got.Date != "2026-11-06" {
 		t.Errorf("date = %s, want 2026-11-06", got.Date)
+	}
+}
+
+func TestNBRBLatestFallsBackToYesterday(t *testing.T) {
+	handler, fake := newNBRBTestServer(t)
+	fake.unpublished.Store("2026-11-06")
+
+	var got latestRateResponse
+	if code := get(t, handler, "/api/rates/latest?base=USD&quote=BYN", &got); code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	yesterday := time.Date(2026, time.November, 5, 0, 0, 0, 0, time.UTC)
+	if got.Date != "2026-11-05" || got.Rate != roundSignificant(fakeRate(431, yesterday), 6) {
+		t.Errorf("got %+v, want the rate for 2026-11-05", got)
+	}
+
+	// An explicit date gets no fallback.
+	if code := get(t, handler, "/api/rates/latest?base=USD&quote=BYN&date=2026-11-06", nil); code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", code)
 	}
 }
 
