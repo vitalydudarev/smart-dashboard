@@ -21,6 +21,7 @@ func main() {
 		newNBRBProvider(newNBRBClient(nbrbBaseURL)),
 		&mockProvider{store: newRateStore(historyStart, today())},
 	)
+	srv.weather = newWeatherService(newPogodaClient(pogodaBaseURL))
 
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, srv.routes()))

@@ -30,3 +30,17 @@ export function todayIso(): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
+
+const temperature = new Intl.NumberFormat('en-GB', {
+  maximumFractionDigits: 1,
+  minimumFractionDigits: 1,
+  // Keeps a reading that rounds to zero from showing as -0.0.
+  signDisplay: 'negative',
+})
+const humidity = new Intl.NumberFormat('en-GB', { style: 'percent', maximumFractionDigits: 0 })
+// Measurement times are real instants, so unlike the date-only strings above they show in the viewer's zone.
+const dateTime = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+
+export const formatTemperature = (celsius: number) => `${temperature.format(celsius)} °C`
+export const formatHumidity = (percent: number) => humidity.format(percent / 100)
+export const formatDateTime = (iso: string) => dateTime.format(new Date(iso))

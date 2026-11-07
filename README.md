@@ -31,7 +31,14 @@ replaced BYR). Every other pair is mocked: each currency follows a deterministic
   for the rate on a given day
 - `GET /api/rates/history?base=EUR&quote=USD&range=30d` – daily rates for a preset range
   (`7d`, `30d`, `6m`, `1y`, `5y`), or with `from=YYYY-MM-DD&to=YYYY-MM-DD` instead of `range`
+- `GET /api/weather?lat=53.9&lng=27.56` – the latest temperature and humidity from the
+  [Belhydromet](https://pogoda.by) station nearest the coordinates (Minsk when they are left out)
 
 NBRB requests time out after 5 seconds; the API then answers `502` and the frontend shows `—`. The
 NBRB currency list is cached for a day and every fetched daily rate for the life of the process, so a
 history request also serves later single-day lookups.
+
+Weather comes from Belhydromet's station list (cached for a day) and the latest observation of the
+nearest station. When a station fails or reports no temperature, the next nearest is tried, up to five;
+if none answers the API returns `502` and the widget shows `—` with a warning. The widget asks the
+browser for the viewer's location (falling back to Minsk) and refreshes every 5 minutes.

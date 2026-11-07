@@ -40,7 +40,7 @@ export type RangePreset = '7d' | '30d' | '6m' | '1y' | '5y'
 /** Either a preset counted back from the latest day, or explicit YYYY-MM-DD bounds. */
 export type RatePeriod = { range: RangePreset } | { from: string; to: string }
 
-async function getJson<T>(path: string, params: Record<string, string>, signal?: AbortSignal): Promise<T> {
+export async function getJson<T>(path: string, params: Record<string, string>, signal?: AbortSignal): Promise<T> {
   const query = new URLSearchParams(params).toString()
   const response = await fetch(query ? `${path}?${query}` : path, { signal })
 

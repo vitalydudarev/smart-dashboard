@@ -16,3 +16,10 @@
   margin: 0 auto;
   padding: var(--app-space-5);
 }
+
+.widgets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--app-space-5);
+}
