@@ -51,7 +51,6 @@ type pogodaFact struct {
 	PStation     *float64   `json:"pStation"`
 	PSea         *float64   `json:"pSea"`
 	Tendency     *float64   `json:"tend"`
-	Code         *int       `json:"code"`
 	SpeedWind    *float64   `json:"speedWind"`
 	SpeedWindMax *float64   `json:"speedWindMax"`
 	Visibility   *float64   `json:"vis_m"`
