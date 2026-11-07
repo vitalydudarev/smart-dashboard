@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ const fakeCities = `{
 
 type fakePogoda struct {
 	citiesRequests atomic.Int32
+	factRequests   atomic.Int32
 	failCities     atomic.Bool
 	// Station ids whose weather-fact request fails, or which report no temperature.
 	failing, empty map[string]bool
@@ -36,6 +38,7 @@ func (f *fakePogoda) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprint(w, fakeCities)
 	case "/weather-fact":
+		f.factRequests.Add(1)
 		station := r.URL.Query().Get("station")
 		switch {
 		case f.failing[station]:
@@ -142,6 +145,73 @@ func TestWeatherBadCoordinates(t *testing.T) {
 		if code := get(t, handler, target, nil); code != http.StatusBadRequest {
 			t.Errorf("%s: status = %d, want 400", target, code)
 		}
+	}
+}
+
+func TestWeatherStationsByDistance(t *testing.T) {
+	handler := newWeatherTestServer(t, &fakePogoda{})
+
+	// From Berlin, Berlin comes first and Barysaŭ, east of Minsk, last; Uzda has no coordinates.
+	var got weatherStationsResponse
+	if code := get(t, handler, "/api/weather/stations?lat=52.52&lng=13.405", &got); code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	var ids []int
+	for _, station := range got.Stations {
+		ids = append(ids, station.ID)
+	}
+	if want := []int{10384, 26850, 26759}; !slices.Equal(ids, want) {
+		t.Errorf("station ids = %v, want %v", ids, want)
+	}
+	if got.Stations[0].DistanceKm > 10 || got.Stations[1].DistanceKm < 900 {
+		t.Errorf("distances = %+v", got.Stations)
+	}
+	if got.Source != pogodaSource {
+		t.Errorf("source = %+v", got.Source)
+	}
+
+	if code := get(t, handler, "/api/weather/stations?lat=abc&lng=1", nil); code != http.StatusBadRequest {
+		t.Errorf("bad coordinates: status = %d, want 400", code)
+	}
+}
+
+func TestStationWeather(t *testing.T) {
+	fake := &fakePogoda{
+		failing: map[string]bool{"26759": true},
+		empty:   map[string]bool{"10384": true},
+	}
+	handler := newWeatherTestServer(t, fake)
+
+	var got weatherResponse
+	if code := get(t, handler, "/api/weather/stations/26850?lat=52.52&lng=13.405", &got); code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	if got.Location.ID != 26850 || got.Temperature != 3.8 || got.Location.DistanceKm < 900 {
+		t.Errorf("got %+v, want Minsk about 950 km from Berlin", got)
+	}
+
+	for target, want := range map[string]int{
+		"/api/weather/stations/10384": http.StatusNotFound,   // reports no temperature
+		"/api/weather/stations/1":     http.StatusNotFound,   // has no coordinates
+		"/api/weather/stations/99":    http.StatusNotFound,   // does not exist
+		"/api/weather/stations/abc":   http.StatusBadRequest, // not an id
+		"/api/weather/stations/26759": http.StatusBadGateway, // upstream fails
+	} {
+		if code := get(t, handler, target, nil); code != want {
+			t.Errorf("%s: status = %d, want %d", target, code, want)
+		}
+	}
+}
+
+func TestStationWeatherCachesObservations(t *testing.T) {
+	fake := &fakePogoda{}
+	handler := newWeatherTestServer(t, fake)
+	for range 3 {
+		get(t, handler, "/api/weather/stations/26850", nil)
+	}
+	get(t, handler, "/api/weather", nil)
+	if n := fake.factRequests.Load(); n != 1 {
+		t.Errorf("weather fact requested %d times, want 1", n)
 	}
 }
 

@@ -44,3 +44,9 @@ const dateTime = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSty
 export const formatTemperature = (celsius: number) => `${temperature.format(celsius)} °C`
 export const formatHumidity = (percent: number) => humidity.format(percent / 100)
 export const formatDateTime = (iso: string) => dateTime.format(new Date(iso))
+
+const distance = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 0 })
+const nearDistance = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 })
+
+/** Whole kilometres, with one decimal under 10 km so nearby stations still read differently. */
+export const formatDistance = (km: number) => `${(km < 10 ? nearDistance : distance).format(km)} km`

@@ -1,33 +1,19 @@
-import { Droplets, MapPin } from 'lucide-react'
+import { ChevronRight, Droplets, MapPin } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { type Coordinates, type Weather, fetchWeather } from '../../api/weather.ts'
 import { formatDateTime, formatHumidity, formatTemperature } from '../../utils/format.ts'
+import { currentPosition } from '../../utils/geolocation.ts'
 import './WeatherWidget.scss'
 
 const refreshInterval = 5 * 60 * 1000
 
 type WeatherState = { status: 'loading' } | { status: 'error' } | { status: 'loaded'; weather: Weather }
 
-/** The viewer's position, or null when the browser cannot or may not tell; never rejects. */
-function currentPosition(): Promise<Coordinates | null> {
-  return new Promise((resolve) => {
-    if (!('geolocation' in navigator)) {
-      resolve(null)
-      return
-    }
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => resolve({ lat: coords.latitude, lng: coords.longitude }),
-      (error) => {
-        console.warn('Geolocation unavailable, using the default location:', error.message)
-        resolve(null)
-      },
-      // A city-level fix is plenty for picking a weather station.
-      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 30 * 60 * 1000 },
-    )
-  })
-}
-
-/** Current temperature and humidity at the Belhydromet station nearest the viewer, refreshed every 5 minutes. */
+/**
+ * Current temperature and humidity at the Belhydromet station nearest the viewer, refreshed every 5 minutes;
+ * opens the page with the weather at other stations.
+ */
 function WeatherWidget() {
   const [state, setState] = useState<WeatherState>({ status: 'loading' })
 
@@ -66,10 +52,18 @@ function WeatherWidget() {
   const weather = state.status === 'loaded' ? state.weather : null
 
   return (
-    <section className="weather-widget" aria-label="Current weather" aria-busy={state.status === 'loading'}>
+    <Link
+      className="weather-widget"
+      to="/weather"
+      aria-label={`${weather ? `Weather in ${weather.location.name}` : 'Current weather'}. View other locations`}
+      aria-busy={state.status === 'loading'}
+    >
       <span className="weather-widget-location">
         <MapPin className="weather-widget-icon" size={16} aria-hidden="true" />
-        {weather ? `${weather.location.name}, ${weather.location.country}` : 'Weather'}
+        <span className="weather-widget-location-name">
+          {weather ? `${weather.location.name}, ${weather.location.country}` : 'Weather'}
+        </span>
+        <ChevronRight className="weather-widget-chevron" size={18} aria-hidden="true" />
       </span>
       <span className="weather-widget-temperature">{weather ? formatTemperature(weather.temperature) : '—'}</span>
       <span className="weather-widget-humidity">
@@ -88,7 +82,7 @@ function WeatherWidget() {
           Weather is currently unavailable
         </span>
       )}
-    </section>
+    </Link>
   )
 }
 

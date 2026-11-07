@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -24,12 +25,20 @@ const (
 	pogodaRetryAfter = 30 * time.Second
 	// How many of the nearest stations to try before giving up on the weather.
 	pogodaMaxStations = 5
+	// Stations report hourly at most; a short cache spares the API when a page asks for many.
+	pogodaFactTTL = 5 * time.Minute
 )
 
 var pogodaSource = Source{ID: "pogoda", Name: "Belhydromet"}
 
-// errNoWeather means no station near the location reported the weather.
-var errNoWeather = errors.New("no weather available near the location")
+var (
+	// errNoNearbyWeather means none of the stations nearest a location reported the weather.
+	errNoNearbyWeather = errors.New("no weather available near the location")
+	// errNoWeather means the station asked for reported no temperature.
+	errNoWeather = errors.New("the station reported no temperature")
+	// errUnknownStation means the station id is not in the station list.
+	errUnknownStation = errors.New("unknown station")
+)
 
 // pogodaCity is one station from the all-cities endpoint. Its id is the station argument of the
 // weather-fact endpoint.
@@ -154,16 +163,24 @@ type weatherService struct {
 	list         []weatherStation
 	listLoadedAt time.Time
 	listFailedAt time.Time
+
+	factsMu sync.Mutex
+	facts   map[int]cachedFact
+}
+
+type cachedFact struct {
+	fact      pogodaFact
+	fetchedAt time.Time
 }
 
 func newWeatherService(client *pogodaClient) *weatherService {
-	return &weatherService{client: client, now: time.Now}
+	return &weatherService{client: client, now: time.Now, facts: map[int]cachedFact{}}
 }
 
 func (s *weatherService) source() Source { return pogodaSource }
 
 // weather tries the stations nearest lat/lng in order and returns the first one that reports a
-// temperature. errNoWeather means none of them did.
+// temperature. errNoNearbyWeather means none of them did.
 func (s *weatherService) weather(ctx context.Context, lat, lng float64) (Weather, error) {
 	stations, err := s.stations(ctx)
 	if err != nil {
@@ -171,7 +188,7 @@ func (s *weatherService) weather(ctx context.Context, lat, lng float64) (Weather
 	}
 
 	for _, candidate := range nearestStations(stations, lat, lng, pogodaMaxStations) {
-		fact, err := s.client.fact(ctx, candidate.station.ID)
+		weather, err := s.observation(ctx, candidate.station)
 		if err != nil {
 			if ctx.Err() != nil {
 				return Weather{}, ctx.Err()
@@ -179,19 +196,68 @@ func (s *weatherService) weather(ctx context.Context, lat, lng float64) (Weather
 			log.Printf("pogoda station %d (%s): %v", candidate.station.ID, candidate.station.Name, err)
 			continue
 		}
-		if fact.Temperature == nil || fact.Date.IsZero() {
-			log.Printf("pogoda station %d (%s): no temperature reported", candidate.station.ID, candidate.station.Name)
-			continue
-		}
-		return Weather{
-			Station:     candidate.station,
-			DistanceKm:  candidate.distanceKm,
-			MeasuredAt:  fact.Date.Time,
-			Temperature: *fact.Temperature,
-			Humidity:    fact.Humidity,
-		}, nil
+		weather.DistanceKm = candidate.distanceKm
+		return weather, nil
 	}
-	return Weather{}, errNoWeather
+	return Weather{}, errNoNearbyWeather
+}
+
+// stationsByDistance returns every station, nearest to lat/lng first.
+func (s *weatherService) stationsByDistance(ctx context.Context, lat, lng float64) ([]stationDistance, error) {
+	stations, err := s.stations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return nearestStations(stations, lat, lng, len(stations)), nil
+}
+
+// stationWeather returns the latest observation at one station, with its distance from lat/lng.
+// errUnknownStation means there is no such station; errNoWeather that it reported no temperature.
+func (s *weatherService) stationWeather(ctx context.Context, id int, lat, lng float64) (Weather, error) {
+	stations, err := s.stations(ctx)
+	if err != nil {
+		return Weather{}, err
+	}
+	i := slices.IndexFunc(stations, func(station weatherStation) bool { return station.ID == id })
+	if i < 0 {
+		return Weather{}, errUnknownStation
+	}
+	weather, err := s.observation(ctx, stations[i])
+	if err != nil {
+		return Weather{}, err
+	}
+	weather.DistanceKm = distanceKm(lat, lng, stations[i].Lat, stations[i].Lng)
+	return weather, nil
+}
+
+// observation returns a station's latest observation, without its distance. Observations are
+// cached for a few minutes; errNoWeather means the station reported no temperature.
+func (s *weatherService) observation(ctx context.Context, station weatherStation) (Weather, error) {
+	s.factsMu.Lock()
+	cached, ok := s.facts[station.ID]
+	s.factsMu.Unlock()
+
+	fact := cached.fact
+	if !ok || s.now().Sub(cached.fetchedAt) >= pogodaFactTTL {
+		var err error
+		fact, err = s.client.fact(ctx, station.ID)
+		if err != nil {
+			return Weather{}, err
+		}
+		s.factsMu.Lock()
+		s.facts[station.ID] = cachedFact{fact: fact, fetchedAt: s.now()}
+		s.factsMu.Unlock()
+	}
+
+	if fact.Temperature == nil || fact.Date.IsZero() {
+		return Weather{}, errNoWeather
+	}
+	return Weather{
+		Station:     station,
+		MeasuredAt:  fact.Date.Time,
+		Temperature: *fact.Temperature,
+		Humidity:    fact.Humidity,
+	}, nil
 }
 
 // stations returns the cached station list, reloading it once a day. A stale list is served when a

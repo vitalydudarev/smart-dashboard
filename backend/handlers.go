@@ -29,6 +29,8 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/rates/latest", s.handleRate)
 	mux.HandleFunc("GET /api/rates/history", s.handleRateHistory)
 	mux.HandleFunc("GET /api/weather", s.handleWeather)
+	mux.HandleFunc("GET /api/weather/stations", s.handleWeatherStations)
+	mux.HandleFunc("GET /api/weather/stations/{id}", s.handleStationWeather)
 	return mux
 }
 
@@ -66,6 +68,12 @@ type weatherLocation struct {
 	Name       string  `json:"name"`
 	Country    string  `json:"country"`
 	DistanceKm float64 `json:"distanceKm"`
+}
+
+type weatherStationsResponse struct {
+	// Every station, nearest to the requested coordinates first.
+	Stations []weatherLocation `json:"stations"`
+	Source   Source            `json:"source"`
 }
 
 // Used when the client does not send its location.
@@ -156,43 +164,113 @@ func (s *server) handleRateHistory(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/weather?lat=53.9&lng=27.56 (Minsk when lat/lng are left out)
 func (s *server) handleWeather(w http.ResponseWriter, r *http.Request) {
+	lat, lng, ok := s.weatherParams(w, r)
+	if !ok {
+		return
+	}
+
+	weather, err := s.weather.weather(r.Context(), lat, lng)
+	if err != nil {
+		s.writeWeatherError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.weatherResponse(weather))
+}
+
+// GET /api/weather/stations?lat=53.9&lng=27.56 (distances from Minsk when lat/lng are left out)
+func (s *server) handleWeatherStations(w http.ResponseWriter, r *http.Request) {
+	lat, lng, ok := s.weatherParams(w, r)
+	if !ok {
+		return
+	}
+
+	ranked, err := s.weather.stationsByDistance(r.Context(), lat, lng)
+	if err != nil {
+		s.writeWeatherError(w, err)
+		return
+	}
+
+	stations := make([]weatherLocation, len(ranked))
+	for i, candidate := range ranked {
+		stations[i] = newWeatherLocation(candidate.station, candidate.distanceKm)
+	}
+	writeJSON(w, http.StatusOK, weatherStationsResponse{Stations: stations, Source: s.weather.source()})
+}
+
+// GET /api/weather/stations/26850?lat=53.9&lng=27.56 (distance from Minsk when lat/lng are left out)
+func (s *server) handleStationWeather(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "station id must be a number")
+		return
+	}
+	lat, lng, ok := s.weatherParams(w, r)
+	if !ok {
+		return
+	}
+
+	weather, err := s.weather.stationWeather(r.Context(), id, lat, lng)
+	if err != nil {
+		s.writeWeatherError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.weatherResponse(weather))
+}
+
+// weatherParams reads the optional lat/lng, defaulting to Minsk. It writes the error response and
+// returns false when they are invalid or weather is not configured.
+func (s *server) weatherParams(w http.ResponseWriter, r *http.Request) (lat, lng float64, ok bool) {
 	query := r.URL.Query()
 
-	lat, lng := defaultLat, defaultLng
+	lat, lng = defaultLat, defaultLng
 	if query.Has("lat") || query.Has("lng") {
 		var errLat, errLng error
 		lat, errLat = strconv.ParseFloat(query.Get("lat"), 64)
 		lng, errLng = strconv.ParseFloat(query.Get("lng"), 64)
 		if errLat != nil || errLng != nil || lat < -90 || lat > 90 || lng < -180 || lng > 180 {
 			writeError(w, http.StatusBadRequest, "lat and lng must be coordinates in degrees")
-			return
+			return 0, 0, false
 		}
 	}
 
 	if s.weather == nil {
 		writeError(w, http.StatusServiceUnavailable, "weather is not configured")
-		return
+		return 0, 0, false
 	}
+	return lat, lng, true
+}
 
-	weather, err := s.weather.weather(r.Context(), lat, lng)
-	if err != nil {
+// writeWeatherError reports a weather failure: 404 for an unknown station or one with no current
+// observation, 502 when the source is unreachable.
+func (s *server) writeWeatherError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errUnknownStation):
+		writeError(w, http.StatusNotFound, "no such weather station")
+	case errors.Is(err, errNoWeather):
+		writeError(w, http.StatusNotFound, "the station has no current observation")
+	default:
 		log.Printf("%s: %v", s.weather.source().ID, err)
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("%s is unavailable", s.weather.source().Name))
-		return
 	}
+}
 
-	writeJSON(w, http.StatusOK, weatherResponse{
-		Location: weatherLocation{
-			ID:         weather.Station.ID,
-			Name:       weather.Station.Name,
-			Country:    weather.Station.Country,
-			DistanceKm: math.Round(weather.DistanceKm*10) / 10,
-		},
+func (s *server) weatherResponse(weather Weather) weatherResponse {
+	return weatherResponse{
+		Location:    newWeatherLocation(weather.Station, weather.DistanceKm),
 		Temperature: weather.Temperature,
 		Humidity:    weather.Humidity,
 		MeasuredAt:  weather.MeasuredAt,
 		Source:      s.weather.source(),
-	})
+	}
+}
+
+func newWeatherLocation(station weatherStation, distance float64) weatherLocation {
+	return weatherLocation{
+		ID:         station.ID,
+		Name:       station.Name,
+		Country:    station.Country,
+		DistanceKm: math.Round(distance*10) / 10,
+	}
 }
 
 func (s *server) pairParams(query url.Values) (base, quote string, provider rateProvider, err error) {

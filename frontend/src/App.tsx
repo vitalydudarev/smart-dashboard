@@ -3,6 +3,7 @@ import Navbar from './components/Navbar/Navbar.tsx'
 import RateWidget from './components/RateWidget/RateWidget.tsx'
 import WeatherWidget from './components/WeatherWidget/WeatherWidget.tsx'
 import RatesPage from './pages/RatesPage/RatesPage.tsx'
+import WeatherPage from './pages/WeatherPage/WeatherPage.tsx'
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
             }
           />
           <Route path="rates" element={<RatesPage />} />
+          <Route path="weather" element={<WeatherPage />} />
         </Routes>
       </main>
     </>

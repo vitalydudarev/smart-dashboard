@@ -40,6 +40,17 @@ export type RangePreset = '7d' | '30d' | '6m' | '1y' | '5y'
 /** Either a preset counted back from the latest day, or explicit YYYY-MM-DD bounds. */
 export type RatePeriod = { range: RangePreset } | { from: string; to: string }
 
+/** A non-2xx reply from the backend, with its status so callers can tell "not found" from "unavailable". */
+export class HttpError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'HttpError'
+    this.status = status
+  }
+}
+
 export async function getJson<T>(path: string, params: Record<string, string>, signal?: AbortSignal): Promise<T> {
   const query = new URLSearchParams(params).toString()
   const response = await fetch(query ? `${path}?${query}` : path, { signal })
@@ -47,7 +58,7 @@ export async function getJson<T>(path: string, params: Record<string, string>, s
   if (!response.ok) {
     // The backend explains bad requests as {"error": "..."}; anything else gets a generic message.
     const body = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `Request failed with status ${response.status}`)
+    throw new HttpError(body?.error ?? `Request failed with status ${response.status}`, response.status)
   }
 
   return response.json() as Promise<T>
