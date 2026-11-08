@@ -50,3 +50,42 @@ export function fetchWeatherStations(coords: Coordinates | null, signal?: AbortS
 export function fetchStationWeather(id: number, coords: Coordinates | null, signal?: AbortSignal): Promise<Weather> {
   return getJson(`/api/weather/stations/${id}`, coordsParams(coords), signal)
 }
+
+export interface ForecastDay {
+  /** The day, as YYYY-MM-DD. */
+  date: string
+  /** Degrees Celsius; null when the forecast has none. */
+  tempMin: number | null
+  tempMax: number | null
+  /** The midday weather as Belhydromet words it, e.g. "Облачно"; empty when unknown. */
+  description: string
+}
+
+export interface StationForecast {
+  stationId: number
+  /** Earliest day first. */
+  days: ForecastDay[]
+  source: RateSource
+}
+
+/** One station's forecast by day. Never cached. Rejects with a 404 HttpError when the station has none. */
+export function fetchStationForecast(id: number, signal?: AbortSignal): Promise<StationForecast> {
+  return getJson(`/api/weather/stations/${id}/forecast`, {}, signal)
+}
+
+/** The latest radar map or satellite image. */
+export interface WeatherImage {
+  /** The image itself, on pogoda.by. */
+  url: string
+  source: RateSource
+}
+
+/** The Minsk radar's latest map. Never cached. Rejects with a 404 HttpError when there is none. */
+export function fetchRadarImage(signal?: AbortSignal): Promise<WeatherImage> {
+  return getJson('/api/weather/radar', {}, signal)
+}
+
+/** The latest satellite image. Never cached. Rejects with a 404 HttpError when there is none. */
+export function fetchSatelliteImage(signal?: AbortSignal): Promise<WeatherImage> {
+  return getJson('/api/weather/satellite', {}, signal)
+}

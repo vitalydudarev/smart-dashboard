@@ -11,6 +11,10 @@ export const formatDayMonth = (date: number) => dayMonth.format(date)
 export const formatMonthYear = (date: number) => monthYear.format(date)
 export const formatYear = (date: number) => year.format(date)
 
+const weekdayDate = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+/** A date-only string as "Sun 8 Nov". */
+export const formatWeekdayDate = (date: string) => weekdayDate.format(new Date(date))
+
 // Five significant digits reads naturally across magnitudes: 1.0842, 163.27, 0.0066716.
 const rate = new Intl.NumberFormat('en-GB', { minimumSignificantDigits: 5, maximumSignificantDigits: 5 })
 const rateChange = new Intl.NumberFormat('en-GB', { maximumSignificantDigits: 3, signDisplay: 'exceptZero' })

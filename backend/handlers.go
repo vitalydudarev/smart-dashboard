@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,6 +32,9 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/weather", s.handleWeather)
 	mux.HandleFunc("GET /api/weather/stations", s.handleWeatherStations)
 	mux.HandleFunc("GET /api/weather/stations/{id}", s.handleStationWeather)
+	mux.HandleFunc("GET /api/weather/stations/{id}/forecast", s.handleStationForecast)
+	mux.HandleFunc("GET /api/weather/radar", s.handleWeatherImage((*weatherService).radarImageURL))
+	mux.HandleFunc("GET /api/weather/satellite", s.handleWeatherImage((*weatherService).satelliteImageURL))
 	return mux
 }
 
@@ -74,6 +78,28 @@ type weatherStationsResponse struct {
 	// Every station, nearest to the requested coordinates first.
 	Stations []weatherLocation `json:"stations"`
 	Source   Source            `json:"source"`
+}
+
+type forecastResponse struct {
+	StationID int               `json:"stationId"`
+	Days      []forecastDayJSON `json:"days"`
+	Source    Source            `json:"source"`
+}
+
+type forecastDayJSON struct {
+	// The day, as YYYY-MM-DD.
+	Date string `json:"date"`
+	// Degrees Celsius; null when the forecast has none.
+	TempMin *float64 `json:"tempMin"`
+	TempMax *float64 `json:"tempMax"`
+	// The midday weather, e.g. "Облачно"; empty when unknown.
+	Description string `json:"description"`
+}
+
+type weatherImageResponse struct {
+	// The image itself, on pogoda.by.
+	URL    string `json:"url"`
+	Source Source `json:"source"`
 }
 
 // Used when the client does not send its location.
@@ -217,6 +243,56 @@ func (s *server) handleStationWeather(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.weatherResponse(weather))
 }
 
+// GET /api/weather/stations/26850/forecast
+func (s *server) handleStationForecast(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "station id must be a number")
+		return
+	}
+	if _, _, ok := s.weatherParams(w, r); !ok {
+		return
+	}
+
+	days, err := s.weather.forecast(r.Context(), id)
+	if err != nil {
+		s.writeWeatherError(w, err)
+		return
+	}
+
+	body := forecastResponse{StationID: id, Days: make([]forecastDayJSON, len(days)), Source: s.weather.source()}
+	for i, day := range days {
+		body.Days[i] = forecastDayJSON{
+			Date:        day.Date.Format(dateLayout),
+			TempMin:     day.TempMin,
+			TempMax:     day.TempMax,
+			Description: day.Description,
+		}
+	}
+	// Forecasts are revised during the day; always ask again.
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, body)
+}
+
+// GET /api/weather/radar and GET /api/weather/satellite: the URL of the latest radar map or
+// satellite image.
+func (s *server) handleWeatherImage(imageURL func(*weatherService, context.Context) (string, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.weather == nil {
+			writeError(w, http.StatusServiceUnavailable, "weather is not configured")
+			return
+		}
+		target, err := imageURL(s.weather, r.Context())
+		if err != nil {
+			s.writeWeatherError(w, err)
+			return
+		}
+		// The latest image changes every few minutes; always ask again.
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, weatherImageResponse{URL: target, Source: s.weather.source()})
+	}
+}
+
 // weatherParams reads the optional lat/lng, defaulting to Minsk. It writes the error response and
 // returns false when they are invalid or weather is not configured.
 func (s *server) weatherParams(w http.ResponseWriter, r *http.Request) (lat, lng float64, ok bool) {
@@ -248,6 +324,11 @@ func (s *server) writeWeatherError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "no such weather station")
 	case errors.Is(err, errNoWeather):
 		writeError(w, http.StatusNotFound, "the station has no current observation")
+	case errors.Is(err, errNoForecast):
+		writeError(w, http.StatusNotFound, "the station has no forecast")
+	case errors.Is(err, errNoImage):
+		log.Printf("%s: %v", s.weather.source().ID, err)
+		writeError(w, http.StatusNotFound, "the image is not available")
 	default:
 		log.Printf("%s: %v", s.weather.source().ID, err)
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("%s is unavailable", s.weather.source().Name))

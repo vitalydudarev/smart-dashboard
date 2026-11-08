@@ -9,16 +9,24 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 const (
 	pogodaBaseURL = "https://pogoda.by/api/v2"
-	pogodaTimeout = 5 * time.Second
+	// Radar and satellite images are served from here, outside the API.
+	pogodaFilesURL = "https://pogoda.by/files"
+	// The radar whose latest map is shown: Minsk.
+	pogodaRadarKey = "UMMN"
+	// The satellite channel whose latest image is shown.
+	pogodaSatelliteKey = "012"
+	pogodaTimeout      = 5 * time.Second
 	// The station list changes rarely.
 	pogodaCitiesTTL = 24 * time.Hour
 	// After the station list fails to load, wait this long before asking again.
@@ -38,6 +46,10 @@ var (
 	errNoWeather = errors.New("the station reported no temperature")
 	// errUnknownStation means the station id is not in the station list.
 	errUnknownStation = errors.New("unknown station")
+	// errNoForecast means the station's forecast has no days in it.
+	errNoForecast = errors.New("the station has no forecast")
+	// errNoImage means the radar or satellite image list has no usable entry for the image asked for.
+	errNoImage = errors.New("no such image")
 )
 
 // pogodaCity is one station from the all-cities endpoint. Its id is the station argument of the
@@ -107,6 +119,36 @@ func (c *pogodaClient) cities(ctx context.Context) (map[string][]pogodaCity, err
 func (c *pogodaClient) fact(ctx context.Context, station int) (pogodaFact, error) {
 	var fact pogodaFact
 	return fact, c.get(ctx, "/weather-fact", url.Values{"station": {strconv.Itoa(station)}}, &fact)
+}
+
+// pogodaForecastStep is one forecast record. A day has one record per ADVANCE_TIME (0 and 12 hours
+// after midnight UTC).
+type pogodaForecastStep struct {
+	Date        pogodaTime `json:"DATES"`
+	AdvanceTime int        `json:"ADVANCE_TIME"`
+	TempMin     *float64   `json:"TMP_MIN"`
+	TempMax     *float64   `json:"TMP_MAX"`
+	TypeWeather *string    `json:"TypeWeather"`
+}
+
+// forecast returns a station's numeric forecast: records keyed by a day label, then by advance time.
+func (c *pogodaClient) forecast(ctx context.Context, station int) (map[string]map[string]pogodaForecastStep, error) {
+	var byDay map[string]map[string]pogodaForecastStep
+	return byDay, c.get(ctx, "/numeric-weather/12/"+strconv.Itoa(station), nil, &byDay)
+}
+
+// radars returns the latest radar map file name of every radar, keyed by its ICAO code, e.g.
+// "UMMN": "Radar_26850_MAP_PHEN_20261108_1120.png".
+func (c *pogodaClient) radars(ctx context.Context) (map[string]string, error) {
+	var byRadar map[string]string
+	return byRadar, c.get(ctx, "/radar/last", nil, &byRadar)
+}
+
+// satellites returns the latest images of every satellite channel, keyed by channel, e.g.
+// "012": ["012-202611081100.jpg", "small_012-20261108.gif", 2.69]. Entries mix names and numbers.
+func (c *pogodaClient) satellites(ctx context.Context) (map[string][]json.RawMessage, error) {
+	var byChannel map[string][]json.RawMessage
+	return byChannel, c.get(ctx, "/satellite", nil, &byChannel)
 }
 
 func (c *pogodaClient) get(ctx context.Context, path string, query url.Values, out any) error {
@@ -336,4 +378,104 @@ func distanceKm(lat1, lng1, lat2, lng2 float64) float64 {
 	dLat, dLng := rad(lat2-lat1), rad(lng2-lng1)
 	a := math.Sin(dLat/2)*math.Sin(dLat/2) + math.Cos(rad(lat1))*math.Cos(rad(lat2))*math.Sin(dLng/2)*math.Sin(dLng/2)
 	return 2 * earthRadiusKm * math.Asin(math.Min(1, math.Sqrt(a)))
+}
+
+// ForecastDay is the forecast for one day at a station.
+type ForecastDay struct {
+	// Midnight UTC of the day.
+	Date time.Time
+	// The lowest TMP_MIN and highest TMP_MAX among the day's records; nil when none reported one.
+	TempMin, TempMax *float64
+	// The midday record's description, e.g. "Облачно"; empty when there is no midday record.
+	Description string
+}
+
+// middayAdvanceTime is the ADVANCE_TIME of the record whose description stands for the whole day.
+const middayAdvanceTime = 12
+
+// forecast returns a station's forecast, earliest day first. It is not cached: forecasts are
+// revised during the day. errUnknownStation means there is no such station.
+func (s *weatherService) forecast(ctx context.Context, id int) ([]ForecastDay, error) {
+	stations, err := s.stations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.ContainsFunc(stations, func(station weatherStation) bool { return station.ID == id }) {
+		return nil, errUnknownStation
+	}
+
+	byDay, err := s.client.forecast(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	days := forecastDays(byDay)
+	if len(days) == 0 {
+		return nil, errNoForecast
+	}
+	return days, nil
+}
+
+// forecastDays groups the forecast records by their DATES, earliest day first.
+func forecastDays(byDay map[string]map[string]pogodaForecastStep) []ForecastDay {
+	index := map[time.Time]int{}
+	var days []ForecastDay
+	for _, steps := range byDay {
+		for _, step := range steps {
+			if step.Date.IsZero() {
+				continue
+			}
+			i, ok := index[step.Date.Time]
+			if !ok {
+				i = len(days)
+				index[step.Date.Time] = i
+				days = append(days, ForecastDay{Date: step.Date.Time})
+			}
+			day := &days[i]
+			if step.TempMin != nil && (day.TempMin == nil || *step.TempMin < *day.TempMin) {
+				day.TempMin = step.TempMin
+			}
+			if step.TempMax != nil && (day.TempMax == nil || *step.TempMax > *day.TempMax) {
+				day.TempMax = step.TempMax
+			}
+			if step.AdvanceTime == middayAdvanceTime && step.TypeWeather != nil {
+				day.Description = *step.TypeWeather
+			}
+		}
+	}
+	sort.Slice(days, func(i, j int) bool { return days[i].Date.Before(days[j].Date) })
+	return days
+}
+
+// radarFileName matches a radar map file name, capturing the radar's location id.
+var radarFileName = regexp.MustCompile(`^Radar_(\d+)_MAP[\w.-]*$`)
+
+// radarImageURL returns the URL of the Minsk radar's latest map. Not cached: maps are replaced every
+// few minutes. errNoImage means the list has no usable map for that radar.
+func (s *weatherService) radarImageURL(ctx context.Context) (string, error) {
+	byRadar, err := s.client.radars(ctx)
+	if err != nil {
+		return "", err
+	}
+	name := byRadar[pogodaRadarKey]
+	match := radarFileName.FindStringSubmatch(name)
+	if match == nil {
+		return "", fmt.Errorf("%w: radar %s has map %q", errNoImage, pogodaRadarKey, name)
+	}
+	return pogodaFilesURL + "/radars/static/" + match[1] + "/" + url.PathEscape(name), nil
+}
+
+// satelliteImageURL returns the URL of the latest full-size image of the chosen satellite channel.
+// Not cached: images are replaced during the day. errNoImage means the list has no such image.
+func (s *weatherService) satelliteImageURL(ctx context.Context) (string, error) {
+	byChannel, err := s.client.satellites(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, raw := range byChannel[pogodaSatelliteKey] {
+		var name string
+		if json.Unmarshal(raw, &name) == nil && strings.HasSuffix(strings.ToLower(name), ".jpg") {
+			return pogodaFilesURL + "/satellite/" + url.PathEscape(name), nil
+		}
+	}
+	return "", fmt.Errorf("%w: satellite channel %s has no jpg", errNoImage, pogodaSatelliteKey)
 }

@@ -36,6 +36,11 @@ replaced BYR). Every other pair is mocked: each currency follows a deterministic
 - `GET /api/weather/stations?lat=53.9&lng=27.56` – every station with its distance, nearest first
 - `GET /api/weather/stations/26850?lat=53.9&lng=27.56` – the latest observation at one station
   (`404` when the station is unknown or has no current observation)
+- `GET /api/weather/stations/26850/forecast` – one station's forecast by day: the lowest and highest
+  temperature and the midday weather (`404` when the station is unknown or has no forecast)
+- `GET /api/weather/radar` – the URL of the Minsk radar's (`UMMN`) latest map on pogoda.by
+- `GET /api/weather/satellite` – the URL of the latest satellite image of channel `012` on pogoda.by
+  (both `404` when the list has no such image)
 
 NBRB requests time out after 5 seconds; the API then answers `502` and the frontend shows `—`. The
 NBRB currency list is cached for a day and every fetched daily rate for the life of the process, so a
@@ -46,4 +51,6 @@ nearest station. When a station fails or reports no temperature, the next neares
 if none answers the API returns `502` and the widget shows `—` with a warning. The widget asks the
 browser for the viewer's location (falling back to Minsk) and refreshes every 5 minutes. Clicking it
 opens `/weather`, which lists every station nearest first, with a search box; each row loads its
-weather when it scrolls into view. Observations are cached for 5 minutes.
+weather when it scrolls into view. Observations are cached for 5 minutes. A panel beside the list shows the
+forecast for the selected row (the first one until another is clicked); forecasts are never cached. Below the forecast are the latest radar map
+and satellite image; clicking one opens it full size. Their image lists are never cached either.
