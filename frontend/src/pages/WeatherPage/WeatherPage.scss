@@ -121,7 +121,8 @@
     box-shadow: inset 0 0 0 2px var(--app-accent);
   }
 
-  &[aria-pressed='true'] {
+  &[aria-pressed='true'],
+  &[aria-expanded='true'] {
     background: var(--app-accent-soft);
     box-shadow: inset 3px 0 0 var(--app-accent);
 
@@ -317,9 +318,49 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  // Above the long list, so picking a station shows its forecast without scrolling to the end.
+  // The forecast opens under the selected row instead, so only the images are left here: two
+  // thumbnails side by side above the list, each opening full size when tapped.
   .weather-sidebar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--app-space-3);
     order: -1;
+  }
+
+  .weather-image {
+    gap: var(--app-space-2);
+    padding: var(--app-space-3);
+
+    h2 {
+      font-size: var(--app-text-sm);
+    }
+  }
+
+  .weather-image-link img {
+    aspect-ratio: 1;
+    object-fit: contain;
+  }
+
+  // Attached to the row above it, sharing its accent bar.
+  .weather-forecast.weather-forecast--inline {
+    gap: 0;
+    padding: 0 var(--app-space-5) var(--app-space-2);
+    border: 0;
+    border-radius: 0;
+    background: var(--app-accent-soft);
+    box-shadow: inset 3px 0 0 var(--app-accent);
+
+    .weather-forecast-header {
+      display: none;
+    }
+
+    .weather-forecast-message {
+      padding: var(--app-space-2) 0;
+    }
+
+    .weather-forecast-day {
+      border-color: var(--app-border-strong);
+    }
   }
 }
 
@@ -329,8 +370,13 @@
   }
 
   .weather-station-button,
-  .weather-forecast,
-  .weather-image {
+  .weather-forecast {
     padding: var(--app-space-3) var(--app-space-4);
+  }
+
+  // Lines up with the row's text above it.
+  .weather-forecast.weather-forecast--inline {
+    padding-right: var(--app-space-4);
+    padding-left: var(--app-space-4);
   }
 }

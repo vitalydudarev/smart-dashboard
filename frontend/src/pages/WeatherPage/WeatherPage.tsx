@@ -1,5 +1,5 @@
 import { ArrowLeft, Droplets, Search } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Link } from 'react-router'
 import { HttpError } from '../../api/rates.ts'
 import {
@@ -50,6 +50,21 @@ type ImageState =
   | { status: 'error' }
   | { status: 'loaded'; image: WeatherImage }
 
+/** Matches the SCSS breakpoint below which the page is a single column. */
+const NARROW_QUERY = '(max-width: 860px)'
+
+/** Whether the media query matches, following changes such as a rotated phone. */
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const list = window.matchMedia(query)
+      list.addEventListener('change', onChange)
+      return () => list.removeEventListener('change', onChange)
+    },
+    () => window.matchMedia(query).matches,
+  )
+}
+
 /** Calls back once, the first time the element scrolls near the viewport. */
 function useFirstVisible<T extends Element>(onVisible: () => void) {
   const ref = useRef<T>(null)
@@ -83,21 +98,37 @@ function useFirstVisible<T extends Element>(onVisible: () => void) {
 
 /**
  * One station; its weather loads when the row first scrolls into view, so a long list stays cheap.
- * Clicking the row shows its forecast.
+ * Clicking the row shows its forecast: beside the list, or on narrow screens in `forecast` under the row,
+ * which then expands and collapses.
  */
 function StationRow({
   station,
   coords,
   selected,
+  expandable,
   onSelect,
+  forecast,
 }: {
   station: WeatherLocation
   coords: Coordinates | null
   selected: boolean
+  expandable: boolean
   onSelect: (id: number) => void
+  forecast?: ReactNode
 }) {
   const [state, setState] = useState<StationWeatherState>({ status: 'idle' })
   const controller = useRef<AbortController | null>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  // Where the row was on screen when clicked. Opening it can close a forecast above it, which would
+  // otherwise pull the row up and out of view.
+  const clickedAt = useRef<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (clickedAt.current == null || !button.current) return
+    const shift = button.current.getBoundingClientRect().top - clickedAt.current
+    clickedAt.current = null
+    if (shift !== 0) window.scrollBy(0, shift)
+  }, [selected])
 
   const ref = useFirstVisible<HTMLLIElement>(() => {
     const current = new AbortController()
@@ -124,8 +155,13 @@ function StationRow({
       <button
         type="button"
         className="weather-station-button"
-        aria-pressed={selected}
-        onClick={() => onSelect(station.id)}
+        aria-pressed={expandable ? undefined : selected}
+        aria-expanded={expandable ? selected : undefined}
+        ref={button}
+        onClick={(event) => {
+          clickedAt.current = event.currentTarget.getBoundingClientRect().top
+          onSelect(station.id)
+        }}
       >
         <div className="weather-station-place">
           <span className="weather-station-name">
@@ -155,12 +191,13 @@ function StationRow({
           </span>
         </div>
       </button>
+      {forecast}
     </li>
   )
 }
 
 /** The selected station's forecast by day, fetched afresh each time it mounts (no caching). */
-function ForecastPanel({ station }: { station: WeatherLocation }) {
+function ForecastPanel({ station, inline = false }: { station: WeatherLocation; inline?: boolean }) {
   const [state, setState] = useState<ForecastState>({ status: 'loading' })
 
   useEffect(() => {
@@ -183,7 +220,7 @@ function ForecastPanel({ station }: { station: WeatherLocation }) {
 
   return (
     <aside
-      className="weather-forecast"
+      className={inline ? 'weather-forecast weather-forecast--inline' : 'weather-forecast'}
       aria-label={`Forecast for ${station.name}`}
       aria-busy={state.status === 'loading'}
     >
@@ -283,6 +320,9 @@ function WeatherPage() {
   const [state, setState] = useState<StationsState>({ status: 'locating' })
   const [filter, setFilter] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  // On narrow screens the forecast opens under the selected row, which can be closed again.
+  const narrow = useMediaQuery(NARROW_QUERY)
+  const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     let disposed = false
@@ -319,6 +359,16 @@ function WeatherPage() {
       : []
   // The first row until the viewer picks one, or when the filter hides the one they picked.
   const selected = stations.find((station) => station.id === selectedId) ?? stations[0]
+  const expanded = !narrow || !collapsed
+
+  const select = (id: number) => {
+    if (narrow && id === selected.id) {
+      setCollapsed((current) => !current)
+    } else {
+      setSelectedId(id)
+      setCollapsed(false)
+    }
+  }
 
   return (
     <div className="weather-page">
@@ -368,14 +418,20 @@ function WeatherPage() {
                   key={station.id}
                   station={station}
                   coords={state.coords}
-                  selected={station.id === selected.id}
-                  onSelect={setSelectedId}
+                  selected={expanded && station.id === selected.id}
+                  expandable={narrow}
+                  onSelect={select}
+                  forecast={
+                    narrow &&
+                    expanded &&
+                    station.id === selected.id && <ForecastPanel key={selected.id} station={selected} inline />
+                  }
                 />
               ))}
             </ul>
             <div className="weather-sidebar">
               {/* Keyed by station so each selection starts from a fresh "loading" state. */}
-              <ForecastPanel key={selected.id} station={selected} />
+              {!narrow && <ForecastPanel key={selected.id} station={selected} />}
               <WeatherImagePanel title="Radar" load={fetchRadarImage} />
               <WeatherImagePanel title="Satellite" load={fetchSatelliteImage} />
             </div>
