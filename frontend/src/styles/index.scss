@@ -17,9 +17,18 @@
   padding: var(--app-space-5);
 }
 
+// Every widget takes the size of the largest one: the grid shrinks to fit its content, and equal
+// columns (rows once stacked) each grow to the widest (tallest) widget.
 .widgets {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  display: inline-grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
   gap: var(--app-space-5);
+}
+
+@media (max-width: 640px) {
+  .widgets {
+    grid-auto-rows: 1fr;
+    grid-auto-flow: row;
+  }
 }
