@@ -121,8 +121,7 @@ func (c *pogodaClient) fact(ctx context.Context, station int) (pogodaFact, error
 	return fact, c.get(ctx, "/weather-fact", url.Values{"station": {strconv.Itoa(station)}}, &fact)
 }
 
-// pogodaForecastStep is one forecast record. A day has one record per ADVANCE_TIME (0 and 12 hours
-// after midnight UTC).
+// pogodaForecastStep is one forecast record, valid ADVANCE_TIME hours after DATES, one every 12 hours.
 type pogodaForecastStep struct {
 	Date        pogodaTime `json:"DATES"`
 	AdvanceTime int        `json:"ADVANCE_TIME"`
@@ -390,8 +389,8 @@ type ForecastDay struct {
 	Description string
 }
 
-// middayAdvanceTime is the ADVANCE_TIME of the record whose description stands for the whole day.
-const middayAdvanceTime = 12
+// middayHour is the UTC hour of the record whose description stands for the whole day.
+const middayHour = 12
 
 // forecast returns a station's forecast, earliest day first. It is not cached: forecasts are
 // revised during the day. errUnknownStation means there is no such station.
@@ -415,20 +414,53 @@ func (s *weatherService) forecast(ctx context.Context, id int) ([]ForecastDay, e
 	return days, nil
 }
 
-// forecastDays groups the forecast records by their DATES, earliest day first.
+// forecastDays groups the forecast records by the day they forecast, earliest day first.
+//
+// A record is valid ADVANCE_TIME hours after its DATES. DATES may be the day itself (ADVANCE_TIME 0
+// and 12) or the time the forecast was issued, shared by every record (ADVANCE_TIME 0, 12, 24, 36…),
+// so grouping by DATES alone would put the whole forecast on its first day. When that still leaves
+// fewer days than the response has day keys, the keys are used instead.
 func forecastDays(byDay map[string]map[string]pogodaForecastStep) []ForecastDay {
+	days := groupForecast(byDay, func(_ time.Time, step pogodaForecastStep) time.Time {
+		return step.Date.Add(time.Duration(step.AdvanceTime) * time.Hour)
+	})
+	keyed := groupForecast(byDay, func(key time.Time, step pogodaForecastStep) time.Time {
+		if key.IsZero() {
+			return time.Time{}
+		}
+		return key.Add(time.Duration(step.AdvanceTime%24) * time.Hour)
+	})
+	if len(keyed) > len(days) {
+		return keyed
+	}
+	return days
+}
+
+// groupForecast groups the records by the UTC day of the time validAt gives each one (skipping
+// zero times), taking the midday record's description for the day. key is the record's parsed day
+// key, zero when it does not parse.
+func groupForecast(
+	byDay map[string]map[string]pogodaForecastStep,
+	validAt func(key time.Time, step pogodaForecastStep) time.Time,
+) []ForecastDay {
 	index := map[time.Time]int{}
 	var days []ForecastDay
-	for _, steps := range byDay {
+	for label, steps := range byDay {
+		key := parseForecastDayKey(label)
 		for _, step := range steps {
 			if step.Date.IsZero() {
 				continue
 			}
-			i, ok := index[step.Date.Time]
+			valid := validAt(key, step).UTC()
+			if valid.IsZero() {
+				continue
+			}
+			date := time.Date(valid.Year(), valid.Month(), valid.Day(), 0, 0, 0, 0, time.UTC)
+			i, ok := index[date]
 			if !ok {
 				i = len(days)
-				index[step.Date.Time] = i
-				days = append(days, ForecastDay{Date: step.Date.Time})
+				index[date] = i
+				days = append(days, ForecastDay{Date: date})
 			}
 			day := &days[i]
 			if step.TempMin != nil && (day.TempMin == nil || *step.TempMin < *day.TempMin) {
@@ -437,13 +469,27 @@ func forecastDays(byDay map[string]map[string]pogodaForecastStep) []ForecastDay 
 			if step.TempMax != nil && (day.TempMax == nil || *step.TempMax > *day.TempMax) {
 				day.TempMax = step.TempMax
 			}
-			if step.AdvanceTime == middayAdvanceTime && step.TypeWeather != nil {
+			if valid.Hour() == middayHour && step.TypeWeather != nil {
 				day.Description = *step.TypeWeather
 			}
 		}
 	}
 	sort.Slice(days, func(i, j int) bool { return days[i].Date.Before(days[j].Date) })
 	return days
+}
+
+// parseForecastDayKey parses a forecast day key such as "Sun Nov 08 2026 00:00:00 GMT+0000
+// (Coordinated Universal Time)" or "2026-11-08" into midnight UTC of that day; zero when it does not parse.
+func parseForecastDayKey(label string) time.Time {
+	if i := strings.Index(label, " ("); i >= 0 {
+		label = label[:i]
+	}
+	for _, layout := range []string{"Mon Jan 02 2006 15:04:05 GMT-0700", time.RFC3339Nano, "2006-01-02T15:04:05.999999999", "2006-01-02"} {
+		if t, err := time.Parse(layout, label); err == nil {
+			return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+		}
+	}
+	return time.Time{}
 }
 
 // radarFileName matches a radar map file name, capturing the radar's location id.

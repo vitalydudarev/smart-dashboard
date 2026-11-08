@@ -328,3 +328,72 @@ func TestDistanceKm(t *testing.T) {
 		t.Errorf("distance = %v km", d)
 	}
 }
+
+func TestForecastDays(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	s := func(v string) *string { return &v }
+	step := func(dates string, advance int, lo, hi float64, weather string) pogodaForecastStep {
+		var d pogodaTime
+		if err := d.UnmarshalJSON([]byte(`"` + dates + `"`)); err != nil {
+			t.Fatal(err)
+		}
+		return pogodaForecastStep{Date: d, AdvanceTime: advance, TempMin: f(lo), TempMax: f(hi), TypeWeather: s(weather)}
+	}
+	type day struct {
+		date        string
+		lo, hi      float64
+		description string
+	}
+	check := func(t *testing.T, got []ForecastDay, want []day) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("got %d days, want %d: %+v", len(got), len(want), got)
+		}
+		for i, w := range want {
+			g := got[i]
+			if g.Date.Format(dateLayout) != w.date || *g.TempMin != w.lo || *g.TempMax != w.hi || g.Description != w.description {
+				t.Errorf("day %d = %s %v..%v %q, want %+v", i, g.Date.Format(dateLayout), *g.TempMin, *g.TempMax, g.Description, w)
+			}
+		}
+	}
+
+	t.Run("one issue time, hours ahead", func(t *testing.T) {
+		const issued = "2026-11-08T00:00:00.000Z"
+		got := forecastDays(map[string]map[string]pogodaForecastStep{
+			"Sun Nov 08 2026 00:00:00 GMT+0000 (Coordinated Universal Time)": {
+				"0":  step(issued, 0, 1, 3, "Облачно"),
+				"12": step(issued, 12, 2, 5, "Дождь"),
+				"24": step(issued, 24, -2, 0, "Туман"),
+				"36": step(issued, 36, -1, 4, "Ясно"),
+				"48": step(issued, 48, -4, -1, "Снег"),
+			},
+		})
+		check(t, got, []day{
+			{"2026-11-08", 1, 5, "Дождь"},
+			{"2026-11-09", -2, 4, "Ясно"},
+			{"2026-11-10", -4, -1, ""},
+		})
+	})
+
+	t.Run("one issue time, day keys", func(t *testing.T) {
+		const issued = "2026-11-08T00:00:00.000Z"
+		got := forecastDays(map[string]map[string]pogodaForecastStep{
+			"Sun Nov 08 2026 00:00:00 GMT+0000 (Coordinated Universal Time)": {
+				"0":  step(issued, 0, 1, 3, "Облачно"),
+				"12": step(issued, 12, 2, 5, "Дождь"),
+			},
+			"Mon Nov 09 2026 00:00:00 GMT+0000 (Coordinated Universal Time)": {
+				"0":  step(issued, 0, -2, 0, "Туман"),
+				"12": step(issued, 12, -1, 4, "Ясно"),
+			},
+			"2026-11-10": {
+				"12": step(issued, 12, -4, -1, "Снег"),
+			},
+		})
+		check(t, got, []day{
+			{"2026-11-08", 1, 5, "Дождь"},
+			{"2026-11-09", -2, 4, "Ясно"},
+			{"2026-11-10", -4, -1, "Снег"},
+		})
+	})
+}
