@@ -1,4 +1,4 @@
-import { ArrowLeft, Droplets, Search } from 'lucide-react'
+import { ArrowLeft, Droplets, Search, X } from 'lucide-react'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Link } from 'react-router'
 import { HttpError } from '../../api/rates.ts'
@@ -265,11 +265,55 @@ function ForecastPanel({ station, inline = false }: { station: WeatherLocation; 
   )
 }
 
-/** The latest radar map or satellite image; clicking it opens the full-size image in a new tab. */
+/** The full-size image in a modal dialog, closed by Escape, the close button or a click outside the image. */
+function ImageModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const close = useRef(onClose)
+  useEffect(() => {
+    close.current = onClose
+  })
+
+  // Escape closes the dialog natively; React's onClose prop does not reliably see that, so listen
+  // directly. No close() on cleanup: unmounting removes the dialog from the top layer anyway, and
+  // closing it would call onClose (StrictMode's extra cleanup would shut it as soon as it opens).
+  useEffect(() => {
+    const element = dialog.current
+    if (!element) return
+    if (!element.open) element.showModal()
+    const handleClose = () => close.current()
+    element.addEventListener('close', handleClose)
+    return () => element.removeEventListener('close', handleClose)
+  }, [])
+
+  return (
+    <dialog
+      ref={dialog}
+      className="weather-image-modal"
+      aria-label={title}
+      onClick={(event) => {
+        // The dialog itself only receives clicks on the backdrop and the padding around the image.
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <figure className="weather-image-modal-content">
+        <figcaption className="weather-image-modal-header">
+          <span>{title}</span>
+          <button type="button" className="weather-image-modal-close" onClick={onClose} aria-label="Close">
+            <X size={18} aria-hidden="true" />
+          </button>
+        </figcaption>
+        <img src={url} alt={title} />
+      </figure>
+    </dialog>
+  )
+}
+
+/** The latest radar map or satellite image; clicking it opens the full-size image in a modal. */
 function WeatherImagePanel({ title, load }: { title: string; load: (signal: AbortSignal) => Promise<WeatherImage> }) {
   const [state, setState] = useState<ImageState>({ status: 'loading' })
   // The URL whose image failed to load in the browser, as opposed to the request for it.
   const [brokenUrl, setBrokenUrl] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -301,15 +345,24 @@ function WeatherImagePanel({ title, load }: { title: string; load: (signal: Abor
           Image is unavailable
         </p>
       ) : (
-        <a
-          className="weather-image-link"
-          href={state.image.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Open full size"
-        >
-          <img src={state.image.url} alt={title} loading="lazy" onError={() => setBrokenUrl(state.image.url)} />
-        </a>
+        <>
+          <a
+            className="weather-image-link"
+            href={state.image.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open full size"
+            onClick={(event) => {
+              // Ctrl/⌘/Shift-click and middle-click still open the image in a new tab or window.
+              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+              event.preventDefault()
+              setOpen(true)
+            }}
+          >
+            <img src={state.image.url} alt={title} loading="lazy" onError={() => setBrokenUrl(state.image.url)} />
+          </a>
+          {open && <ImageModal url={state.image.url} title={title} onClose={() => setOpen(false)} />}
+        </>
       )}
     </section>
   )
