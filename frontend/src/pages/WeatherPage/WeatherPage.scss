@@ -1,8 +1,12 @@
+// The page fills the window under the navbar, so the station list scrolls inside it instead of
+// the page growing with every station. On a window too short for that, the page scrolls as usual.
 .weather-page {
   display: flex;
   flex-direction: column;
   gap: var(--app-space-4);
   max-width: 1280px;
+  height: calc(100dvh - var(--app-header-height) - 1px - 2 * var(--app-space-5));
+  min-height: 420px;
 }
 
 .weather-back {
@@ -34,6 +38,13 @@
 .weather-subtitle {
   color: var(--app-fg-muted);
   font-size: var(--app-text-sm);
+}
+
+.weather-header-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--app-space-3);
 }
 
 .weather-search {
@@ -75,17 +86,23 @@
 
 .weather-content {
   display: grid;
+  flex: 1;
   grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-rows: minmax(0, 1fr);
   align-items: start;
   gap: var(--app-space-4);
+  min-height: 0;
 }
 
+// Scrolls within the space the page leaves it; a short (filtered) list stays short.
 .weather-stations {
   display: flex;
   flex-direction: column;
+  max-height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-lg);
   background: var(--app-surface);
@@ -182,11 +199,18 @@
   color: var(--app-warning);
 }
 
+// The forecast and maps are taller than most windows, so they scroll on their own beside the list.
 .weather-sidebar {
   display: flex;
   flex-direction: column;
   gap: var(--app-space-4);
   min-width: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  // Room for the panels' shadows, which the scroll box would otherwise clip.
+  margin: calc(-1 * var(--app-space-1));
+  padding: var(--app-space-1);
 }
 
 .weather-forecast,
@@ -206,6 +230,12 @@
     font-size: var(--app-text-md);
     font-weight: 600;
   }
+}
+
+.weather-image-time {
+  font-weight: 400;
+  color: var(--app-fg-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .weather-image-link {
@@ -405,17 +435,20 @@
 }
 
 @media (max-width: 860px) {
+  // Thumbnails on top, the list taking the rest of the height.
   .weather-content {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
-  // The forecast opens under the selected row instead, so only the images are left here: two
-  // thumbnails side by side above the list, each opening full size when tapped.
+  // The forecast opens under the selected row instead, so only the images are left here: one row
+  // of thumbnails above the list, each opening full size when tapped.
   .weather-sidebar {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
     gap: var(--app-space-3);
     order: -1;
+    overflow: visible;
   }
 
   .weather-image {
@@ -456,6 +489,7 @@
 }
 
 @media (max-width: 600px) {
+  .weather-header-controls,
   .weather-search {
     width: 100%;
   }

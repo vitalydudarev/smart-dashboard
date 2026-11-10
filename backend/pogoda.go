@@ -35,6 +35,8 @@ const (
 	pogodaMaxStations = 5
 	// Stations report hourly at most; a short cache spares the API when a page asks for many.
 	pogodaFactTTL = 5 * time.Minute
+	// How many stations' observations to ask for at once when reading a whole country.
+	pogodaFactConcurrency = 8
 )
 
 var pogodaSource = Source{ID: "pogoda", Name: "Belhydromet"}
@@ -301,6 +303,54 @@ func (s *weatherService) observation(ctx context.Context, station weatherStation
 	}, nil
 }
 
+// StationReading is a station and its latest observation; Weather is nil when the station reported
+// none or could not be reached.
+type StationReading struct {
+	Station weatherStation
+	Weather *Weather
+}
+
+// countryWeather returns every station in a country (by code, e.g. "BY") with its latest
+// observation, in station list order. A station whose observation fails is still listed.
+func (s *weatherService) countryWeather(ctx context.Context, country string) ([]StationReading, error) {
+	stations, err := s.stations(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var readings []StationReading
+	for _, station := range stations {
+		if strings.EqualFold(station.Country, country) {
+			readings = append(readings, StationReading{Station: station})
+		}
+	}
+	sort.SliceStable(readings, func(i, j int) bool { return readings[i].Station.Name < readings[j].Station.Name })
+
+	var wg sync.WaitGroup
+	limit := make(chan struct{}, pogodaFactConcurrency)
+	for i := range readings {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			limit <- struct{}{}
+			defer func() { <-limit }()
+			weather, err := s.observation(ctx, readings[i].Station)
+			if err != nil {
+				if !errors.Is(err, errNoWeather) && ctx.Err() == nil {
+					log.Printf("pogoda station %d (%s): %v", readings[i].Station.ID, readings[i].Station.Name, err)
+				}
+				return
+			}
+			readings[i].Weather = &weather
+		}()
+	}
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return readings, nil
+}
+
 // stations returns the cached station list, reloading it once a day. A stale list is served when a
 // reload fails, and after a failed load the API is left alone for a while.
 func (s *weatherService) stations(ctx context.Context) ([]weatherStation, error) {
@@ -387,7 +437,12 @@ type ForecastDay struct {
 	TempMin, TempMax *float64
 	// The midday record's description, e.g. "Облачно"; empty when there is no midday record.
 	Description string
+	// How many forecast records fell on the day.
+	records int
 }
+
+// forecastRecordsPerDay is how many records a complete day has: one every 12 hours.
+const forecastRecordsPerDay = 2
 
 // middayHour is the UTC hour of the record whose description stands for the whole day.
 const middayHour = 12
@@ -419,7 +474,8 @@ func (s *weatherService) forecast(ctx context.Context, id int) ([]ForecastDay, e
 // A record is valid ADVANCE_TIME hours after its DATES. DATES may be the day itself (ADVANCE_TIME 0
 // and 12) or the time the forecast was issued, shared by every record (ADVANCE_TIME 0, 12, 24, 36…),
 // so grouping by DATES alone would put the whole forecast on its first day. When that still leaves
-// fewer days than the response has day keys, the keys are used instead.
+// fewer days than the response has day keys, the keys are used instead. Days with other than
+// forecastRecordsPerDay records, such as a partial first or last day, are left out.
 func forecastDays(byDay map[string]map[string]pogodaForecastStep) []ForecastDay {
 	days := groupForecast(byDay, func(_ time.Time, step pogodaForecastStep) time.Time {
 		return step.Date.Add(time.Duration(step.AdvanceTime) * time.Hour)
@@ -431,9 +487,9 @@ func forecastDays(byDay map[string]map[string]pogodaForecastStep) []ForecastDay 
 		return key.Add(time.Duration(step.AdvanceTime%24) * time.Hour)
 	})
 	if len(keyed) > len(days) {
-		return keyed
+		days = keyed
 	}
-	return days
+	return slices.DeleteFunc(days, func(day ForecastDay) bool { return day.records != forecastRecordsPerDay })
 }
 
 // groupForecast groups the records by the UTC day of the time validAt gives each one (skipping
@@ -463,6 +519,7 @@ func groupForecast(
 				days = append(days, ForecastDay{Date: date})
 			}
 			day := &days[i]
+			day.records++
 			if step.TempMin != nil && (day.TempMin == nil || *step.TempMin < *day.TempMin) {
 				day.TempMin = step.TempMin
 			}
@@ -495,33 +552,67 @@ func parseForecastDayKey(label string) time.Time {
 // radarFileName matches a radar map file name, capturing the radar's location id.
 var radarFileName = regexp.MustCompile(`^Radar_(\d+)_MAP[\w.-]*$`)
 
-// radarImageURL returns the URL of the Minsk radar's latest map. Not cached: maps are replaced every
-// few minutes. errNoImage means the list has no usable map for that radar.
-func (s *weatherService) radarImageURL(ctx context.Context) (string, error) {
+// radarFileTime captures the UTC time at the end of a radar map file name, e.g. "20261108_1120"
+// in "Radar_26850_MAP_PHEN_20261108_1120.png".
+var radarFileTime = regexp.MustCompile(`_(\d{8}_\d{4})\.\w+$`)
+
+// satelliteFileTime captures the UTC time in a satellite image file name, e.g. "202611081100" in
+// "012-202611081100.jpg".
+var satelliteFileTime = regexp.MustCompile(`-(\d{12})\.\w+$`)
+
+// weatherImage is the latest radar map or satellite image.
+type weatherImage struct {
+	URL string
+	// When the image was taken, from its file name; zero when the name has no time.
+	TakenAt time.Time
+}
+
+// fileTime parses the time a file name pattern captures, in UTC; zero when there is none.
+func fileTime(pattern *regexp.Regexp, layout, name string) time.Time {
+	match := pattern.FindStringSubmatch(name)
+	if match == nil {
+		return time.Time{}
+	}
+	t, err := time.Parse(layout, match[1])
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+// radarImage returns the Minsk radar's latest map. Not cached: maps are replaced every few minutes.
+// errNoImage means the list has no usable map for that radar.
+func (s *weatherService) radarImage(ctx context.Context) (weatherImage, error) {
 	byRadar, err := s.client.radars(ctx)
 	if err != nil {
-		return "", err
+		return weatherImage{}, err
 	}
 	name := byRadar[pogodaRadarKey]
 	match := radarFileName.FindStringSubmatch(name)
 	if match == nil {
-		return "", fmt.Errorf("%w: radar %s has map %q", errNoImage, pogodaRadarKey, name)
+		return weatherImage{}, fmt.Errorf("%w: radar %s has map %q", errNoImage, pogodaRadarKey, name)
 	}
-	return pogodaFilesURL + "/radars/static/" + match[1] + "/" + url.PathEscape(name), nil
+	return weatherImage{
+		URL:     pogodaFilesURL + "/radars/static/" + match[1] + "/" + url.PathEscape(name),
+		TakenAt: fileTime(radarFileTime, "20060102_1504", name),
+	}, nil
 }
 
-// satelliteImageURL returns the URL of the latest full-size image of the chosen satellite channel.
-// Not cached: images are replaced during the day. errNoImage means the list has no such image.
-func (s *weatherService) satelliteImageURL(ctx context.Context) (string, error) {
+// satelliteImage returns the latest full-size image of the chosen satellite channel. Not cached:
+// images are replaced during the day. errNoImage means the list has no such image.
+func (s *weatherService) satelliteImage(ctx context.Context) (weatherImage, error) {
 	byChannel, err := s.client.satellites(ctx)
 	if err != nil {
-		return "", err
+		return weatherImage{}, err
 	}
 	for _, raw := range byChannel[pogodaSatelliteKey] {
 		var name string
 		if json.Unmarshal(raw, &name) == nil && strings.HasSuffix(strings.ToLower(name), ".jpg") {
-			return pogodaFilesURL + "/satellite/" + url.PathEscape(name), nil
+			return weatherImage{
+				URL:     pogodaFilesURL + "/satellite/" + url.PathEscape(name),
+				TakenAt: fileTime(satelliteFileTime, "200601021504", name),
+			}, nil
 		}
 	}
-	return "", fmt.Errorf("%w: satellite channel %s has no jpg", errNoImage, pogodaSatelliteKey)
+	return weatherImage{}, fmt.Errorf("%w: satellite channel %s has no jpg", errNoImage, pogodaSatelliteKey)
 }

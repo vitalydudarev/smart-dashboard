@@ -296,16 +296,32 @@ func TestStationForecast(t *testing.T) {
 
 func TestWeatherImages(t *testing.T) {
 	handler := newWeatherTestServer(t, &fakePogoda{})
-	for target, want := range map[string]string{
-		"/api/weather/radar":     "https://pogoda.by/files/radars/static/26850/Radar_26850_MAP_PHEN_20261108_1120.png",
-		"/api/weather/satellite": "https://pogoda.by/files/satellite/012-202611081100.jpg",
+	for target, want := range map[string]struct{ url, takenAt string }{
+		"/api/weather/radar":     {"https://pogoda.by/files/radars/static/26850/Radar_26850_MAP_PHEN_20261108_1120.png", "2026-11-08T11:20:00Z"},
+		"/api/weather/satellite": {"https://pogoda.by/files/satellite/012-202611081100.jpg", "2026-11-08T11:00:00Z"},
 	} {
 		var got weatherImageResponse
 		if code := get(t, handler, target, &got); code != http.StatusOK {
 			t.Fatalf("%s: status = %d, want 200", target, code)
 		}
-		if got.URL != want || got.Source != pogodaSource {
-			t.Errorf("%s: got %+v, want url %s", target, got, want)
+		if got.URL != want.url || got.Source != pogodaSource || got.TakenAt == nil || got.TakenAt.Format(time.RFC3339) != want.takenAt {
+			t.Errorf("%s: got %+v, want %+v", target, got, want)
+		}
+	}
+}
+
+func TestWeatherImagesWithoutTime(t *testing.T) {
+	handler := newWeatherTestServer(t, &fakePogoda{
+		radars:     `{"UMMN":"Radar_26850_MAP_PHEN.png"}`,
+		satellites: `{"012":["012-latest.jpg"]}`,
+	})
+	for _, target := range []string{"/api/weather/radar", "/api/weather/satellite"} {
+		var got weatherImageResponse
+		if code := get(t, handler, target, &got); code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", target, code)
+		}
+		if got.TakenAt != nil {
+			t.Errorf("%s: takenAt = %v, want null", target, got.TakenAt)
 		}
 	}
 }
@@ -319,6 +335,33 @@ func TestWeatherImagesMissing(t *testing.T) {
 		if code := get(t, handler, target, nil); code != http.StatusNotFound {
 			t.Errorf("%s: status = %d, want 404", target, code)
 		}
+	}
+}
+
+func TestWeatherMap(t *testing.T) {
+	// Борисов reports no temperature; Узда has no coordinates and Берлин is in another country.
+	handler := newWeatherTestServer(t, &fakePogoda{empty: map[string]bool{"26759": true}})
+	var got weatherMapResponse
+	if code := get(t, handler, "/api/weather/map", &got); code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	if got.Country != "BY" || len(got.Stations) != 2 {
+		t.Fatalf("got %+v, want the two BY stations with coordinates", got)
+	}
+	borisov, minsk := got.Stations[0], got.Stations[1]
+	if borisov.ID != 26759 || borisov.Temperature != nil || borisov.MeasuredAt != nil || borisov.Lat != 54.23 {
+		t.Errorf("Борисов = %+v, want no reading", borisov)
+	}
+	if minsk.ID != 26850 || minsk.Temperature == nil || *minsk.Temperature != 3.8 || minsk.Lng != 27.63 {
+		t.Errorf("Минск = %+v, want 3.8 °C", minsk)
+	}
+
+	var de weatherMapResponse
+	if code := get(t, handler, "/api/weather/map?country=de", &de); code != http.StatusOK || len(de.Stations) != 1 || de.Stations[0].ID != 10384 {
+		t.Errorf("country=de: status %d, got %+v", code, de)
+	}
+	if code := get(t, handler, "/api/weather/map?country=BLR", nil); code != http.StatusBadRequest {
+		t.Errorf("country=BLR: status = %d, want 400", code)
 	}
 }
 
@@ -371,7 +414,6 @@ func TestForecastDays(t *testing.T) {
 		check(t, got, []day{
 			{"2026-11-08", 1, 5, "Дождь"},
 			{"2026-11-09", -2, 4, "Ясно"},
-			{"2026-11-10", -4, -1, ""},
 		})
 	})
 
@@ -393,7 +435,6 @@ func TestForecastDays(t *testing.T) {
 		check(t, got, []day{
 			{"2026-11-08", 1, 5, "Дождь"},
 			{"2026-11-09", -2, 4, "Ясно"},
-			{"2026-11-10", -4, -1, "Снег"},
 		})
 	})
 }

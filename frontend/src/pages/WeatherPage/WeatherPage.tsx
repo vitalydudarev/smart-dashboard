@@ -1,6 +1,6 @@
 import { ArrowLeft, Droplets, Search, X } from 'lucide-react'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { HttpError } from '../../api/rates.ts'
 import {
   type Coordinates,
@@ -9,6 +9,7 @@ import {
   type WeatherImage,
   type WeatherLocation,
   type WeatherStations,
+  currentWeatherMapImage,
   fetchRadarImage,
   fetchSatelliteImage,
   fetchStationForecast,
@@ -23,6 +24,7 @@ import {
   formatWeekdayDate,
 } from '../../utils/format.ts'
 import { currentPosition } from '../../utils/geolocation.ts'
+import WeatherMap from './WeatherMap.tsx'
 import './WeatherPage.scss'
 
 type StationsState =
@@ -335,7 +337,17 @@ function WeatherImagePanel({ title, load }: { title: string; load: (signal: Abor
 
   return (
     <section className="weather-image" aria-label={title} aria-busy={state.status === 'loading'}>
-      <h2>{title}</h2>
+      <h2>
+        {title}
+        {state.status === 'loaded' && state.image.takenAt && (
+          <>
+            {' '}
+            <span className="weather-image-time">
+              (<time dateTime={state.image.takenAt}>{formatDateTime(state.image.takenAt)}</time>)
+            </span>
+          </>
+        )}
+      </h2>
       {state.status === 'loading' ? (
         <p className="weather-forecast-message">Loading image…</p>
       ) : state.status === 'missing' ? (
@@ -376,6 +388,19 @@ function WeatherPage() {
   // On narrow screens the forecast opens under the selected row, which can be closed again.
   const narrow = useMediaQuery(NARROW_QUERY)
   const [collapsed, setCollapsed] = useState(false)
+  // "?view=map" shows the weather map tab, so it can be linked to and survives a reload.
+  const [params, setParams] = useSearchParams()
+  const view = params.get('view') === 'map' ? 'map' : 'stations'
+  const showView = (next: typeof view) =>
+    setParams(
+      (current) => {
+        const updated = new URLSearchParams(current)
+        if (next === 'map') updated.set('view', 'map')
+        else updated.delete('view')
+        return updated
+      },
+      { replace: true },
+    )
 
   useEffect(() => {
     let disposed = false
@@ -433,28 +458,56 @@ function WeatherPage() {
       <header className="weather-header">
         <div>
           <h1>Weather</h1>
-          {(state.status === 'loading' || state.status === 'loaded') && (
-            <p className="weather-subtitle">
-              {state.located
-                ? 'Stations sorted by distance from you'
-                : 'Your location is unavailable, so stations are sorted by distance from Minsk'}
-            </p>
+          {view === 'map' ? (
+            <p className="weather-subtitle">The latest temperature at every station in Belarus</p>
+          ) : (
+            (state.status === 'loading' || state.status === 'loaded') && (
+              <p className="weather-subtitle">
+                {state.located
+                  ? 'Stations sorted by distance from you'
+                  : 'Your location is unavailable, so stations are sorted by distance from Minsk'}
+              </p>
+            )
           )}
         </div>
-        <label className="weather-search">
-          <Search className="weather-search-icon" size={16} aria-hidden="true" />
-          <span className="app-visually-hidden">Find a location</span>
-          <input
-            type="search"
-            placeholder="Find a location"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-            disabled={state.status !== 'loaded'}
-          />
-        </label>
+        <div className="weather-header-controls">
+          <div className="segmented" role="group" aria-label="Weather view">
+            {(
+              [
+                ['stations', 'Stations'],
+                ['map', 'Weather map'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={value === view ? 'segment segment--selected' : 'segment'}
+                aria-pressed={value === view}
+                onClick={() => showView(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {view === 'stations' && (
+            <label className="weather-search">
+              <Search className="weather-search-icon" size={16} aria-hidden="true" />
+              <span className="app-visually-hidden">Find a location</span>
+              <input
+                type="search"
+                placeholder="Find a location"
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+                disabled={state.status !== 'loaded'}
+              />
+            </label>
+          )}
+        </div>
       </header>
 
-      {state.status === 'locating' || state.status === 'loading' ? (
+      {view === 'map' ? (
+        <WeatherMap />
+      ) : state.status === 'locating' || state.status === 'loading' ? (
         <p className="weather-message">{state.status === 'locating' ? 'Finding your location…' : 'Loading stations…'}</p>
       ) : state.status === 'error' ? (
         <p className="weather-message weather-station-warning" role="alert">
@@ -487,6 +540,7 @@ function WeatherPage() {
               {!narrow && <ForecastPanel key={selected.id} station={selected} />}
               <WeatherImagePanel title="Radar" load={fetchRadarImage} />
               <WeatherImagePanel title="Satellite" load={fetchSatelliteImage} />
+              <WeatherImagePanel title="Current weather map" load={currentWeatherMapImage} />
             </div>
           </div>
           <p className="weather-source">Source: {state.result.source.name}</p>

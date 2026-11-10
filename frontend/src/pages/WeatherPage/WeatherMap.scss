@@ -1,0 +1,54 @@
+// Fills the height the weather page leaves under its header.
+.weather-map {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-sm);
+  // Above the page background, below the navbar (z-index 40) and the image modal.
+  z-index: 0;
+  font: inherit;
+}
+
+.weather-map-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border: 1.5px solid #fff;
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 35%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+
+  &--empty {
+    border-width: 1px;
+    background: #8a94a6;
+  }
+}
+
+.weather-map-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--app-font-sans);
+}
+
+.weather-map-popup-name {
+  font-weight: 600;
+}
+
+.weather-map-popup-temperature {
+  font-size: 1.25em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.weather-map-popup-detail {
+  color: #5b6474;
+}

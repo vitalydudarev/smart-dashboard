@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -33,8 +35,9 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/weather/stations", s.handleWeatherStations)
 	mux.HandleFunc("GET /api/weather/stations/{id}", s.handleStationWeather)
 	mux.HandleFunc("GET /api/weather/stations/{id}/forecast", s.handleStationForecast)
-	mux.HandleFunc("GET /api/weather/radar", s.handleWeatherImage((*weatherService).radarImageURL))
-	mux.HandleFunc("GET /api/weather/satellite", s.handleWeatherImage((*weatherService).satelliteImageURL))
+	mux.HandleFunc("GET /api/weather/map", s.handleWeatherMap)
+	mux.HandleFunc("GET /api/weather/radar", s.handleWeatherImage((*weatherService).radarImage))
+	mux.HandleFunc("GET /api/weather/satellite", s.handleWeatherImage((*weatherService).satelliteImage))
 	return mux
 }
 
@@ -80,6 +83,28 @@ type weatherStationsResponse struct {
 	Source   Source            `json:"source"`
 }
 
+type weatherMapResponse struct {
+	Country string `json:"country"`
+	// Every station in the country, by name.
+	Stations []weatherMapStation `json:"stations"`
+	Source   Source              `json:"source"`
+}
+
+// weatherMapStation is a station's position and latest observation; the observation fields are null
+// when it reported none.
+type weatherMapStation struct {
+	ID          int        `json:"id"`
+	Name        string     `json:"name"`
+	Lat         float64    `json:"lat"`
+	Lng         float64    `json:"lng"`
+	Temperature *float64   `json:"temperature"`
+	Humidity    *float64   `json:"humidity"`
+	MeasuredAt  *time.Time `json:"measuredAt"`
+}
+
+// The country whose stations the weather map shows when none is asked for.
+const defaultMapCountry = "BY"
+
 type forecastResponse struct {
 	StationID int               `json:"stationId"`
 	Days      []forecastDayJSON `json:"days"`
@@ -98,8 +123,10 @@ type forecastDayJSON struct {
 
 type weatherImageResponse struct {
 	// The image itself, on pogoda.by.
-	URL    string `json:"url"`
-	Source Source `json:"source"`
+	URL string `json:"url"`
+	// When the image was taken, from its file name; null when the name has no time.
+	TakenAt *time.Time `json:"takenAt"`
+	Source  Source     `json:"source"`
 }
 
 // Used when the client does not send its location.
@@ -223,6 +250,37 @@ func (s *server) handleWeatherStations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, weatherStationsResponse{Stations: stations, Source: s.weather.source()})
 }
 
+// GET /api/weather/map?country=BY: every station in a country with its position and latest
+// observation, for a map. The country defaults to Belarus.
+func (s *server) handleWeatherMap(w http.ResponseWriter, r *http.Request) {
+	country := strings.ToUpper(cmp.Or(r.URL.Query().Get("country"), defaultMapCountry))
+	if len(country) != 2 {
+		writeError(w, http.StatusBadRequest, "country must be a two-letter code")
+		return
+	}
+	if s.weather == nil {
+		writeError(w, http.StatusServiceUnavailable, "weather is not configured")
+		return
+	}
+
+	readings, err := s.weather.countryWeather(r.Context(), country)
+	if err != nil {
+		s.writeWeatherError(w, err)
+		return
+	}
+	stations := make([]weatherMapStation, len(readings))
+	for i, reading := range readings {
+		station := weatherMapStation{ID: reading.Station.ID, Name: reading.Station.Name, Lat: reading.Station.Lat, Lng: reading.Station.Lng}
+		if weather := reading.Weather; weather != nil {
+			station.Temperature = &weather.Temperature
+			station.Humidity = weather.Humidity
+			station.MeasuredAt = &weather.MeasuredAt
+		}
+		stations[i] = station
+	}
+	writeJSON(w, http.StatusOK, weatherMapResponse{Country: country, Stations: stations, Source: s.weather.source()})
+}
+
 // GET /api/weather/stations/26850?lat=53.9&lng=27.56 (distance from Minsk when lat/lng are left out)
 func (s *server) handleStationWeather(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.PathValue("id"))
@@ -275,21 +333,25 @@ func (s *server) handleStationForecast(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/weather/radar and GET /api/weather/satellite: the URL of the latest radar map or
-// satellite image.
-func (s *server) handleWeatherImage(imageURL func(*weatherService, context.Context) (string, error)) http.HandlerFunc {
+// satellite image, and when it was taken.
+func (s *server) handleWeatherImage(latest func(*weatherService, context.Context) (weatherImage, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.weather == nil {
 			writeError(w, http.StatusServiceUnavailable, "weather is not configured")
 			return
 		}
-		target, err := imageURL(s.weather, r.Context())
+		image, err := latest(s.weather, r.Context())
 		if err != nil {
 			s.writeWeatherError(w, err)
 			return
 		}
 		// The latest image changes every few minutes; always ask again.
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusOK, weatherImageResponse{URL: target, Source: s.weather.source()})
+		body := weatherImageResponse{URL: image.URL, Source: s.weather.source()}
+		if !image.TakenAt.IsZero() {
+			body.TakenAt = &image.TakenAt
+		}
+		writeJSON(w, http.StatusOK, body)
 	}
 }
 

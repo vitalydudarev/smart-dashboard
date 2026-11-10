@@ -77,6 +77,8 @@ export function fetchStationForecast(id: number, signal?: AbortSignal): Promise<
 export interface WeatherImage {
   /** The image itself, on pogoda.by. */
   url: string
+  /** When the image was taken, as an ISO 8601 timestamp; null when its file name has no time. */
+  takenAt: string | null
   source: RateSource
 }
 
@@ -88,4 +90,46 @@ export function fetchRadarImage(signal?: AbortSignal): Promise<WeatherImage> {
 /** The latest satellite image. Never cached. Rejects with a 404 HttpError when there is none. */
 export function fetchSatelliteImage(signal?: AbortSignal): Promise<WeatherImage> {
   return getJson('/api/weather/satellite', {}, signal)
+}
+
+/** Belhydromet's map of the current weather in Belarus; replaced in place at the same address. */
+const CURRENT_WEATHER_MAP_URL = 'https://pogoda.by/files/maps/static/fact/RB_TNOW.png'
+
+/**
+ * The current weather map. Its address never changes, so nothing is fetched; the query string only
+ * keeps the browser from showing a copy it cached on an earlier visit.
+ */
+export function currentWeatherMapImage(): Promise<WeatherImage> {
+  return Promise.resolve({
+    url: `${CURRENT_WEATHER_MAP_URL}?t=${Date.now()}`,
+    takenAt: null,
+    source: { id: 'pogoda', name: 'Belhydromet' },
+  })
+}
+
+/** A station's position and latest observation; the observation fields are null when it reported none. */
+export interface WeatherMapStation {
+  id: number
+  name: string
+  lat: number
+  lng: number
+  /** Degrees Celsius. */
+  temperature: number | null
+  /** Relative humidity in percent. */
+  humidity: number | null
+  /** ISO 8601 timestamp. */
+  measuredAt: string | null
+}
+
+export interface WeatherMap {
+  /** Country code, e.g. BY. */
+  country: string
+  /** Every station in the country, by name. */
+  stations: WeatherMapStation[]
+  source: RateSource
+}
+
+/** Every station in a country with its latest observation. */
+export function fetchWeatherMap(country: string, signal?: AbortSignal): Promise<WeatherMap> {
+  return getJson('/api/weather/map', { country }, signal)
 }
