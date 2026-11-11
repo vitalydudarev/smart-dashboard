@@ -1,7 +1,18 @@
-// Fills the height the weather page leaves under its header.
-.weather-map {
+// Fills the height the weather page leaves under its header. The map inside is sized
+// to the stations' shape, as large as fits, so the outermost ones sit at all four edges.
+.weather-map-area {
+  display: flex;
   flex: 1;
+  justify-content: center;
+  align-items: flex-start;
   min-height: 0;
+}
+
+// Fills the area until the stations are loaded and it is sized to them.
+.weather-map {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 100%;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-lg);
   box-shadow: var(--app-shadow-sm);

@@ -8,6 +8,9 @@ import './WeatherMap.scss'
 /** The country whose stations the map shows. */
 const COUNTRY = 'BY'
 
+/** Space between the outermost stations and the map's edges: about half a temperature badge. */
+const MAP_PADDING = 24
+
 type MapState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
@@ -94,7 +97,8 @@ function WeatherMap() {
 
   useEffect(() => {
     if (!container.current || !stations) return
-    const map = L.map(container.current, { zoomSnap: 0.5 })
+    // zoomSnap 0 lets fitBounds pick a fractional zoom, so the outermost stations sit right at the edges.
+    const map = L.map(container.current, { zoomSnap: 0, zoomDelta: 0.5 })
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -113,15 +117,44 @@ function WeatherMap() {
         .addTo(map)
     }
 
-    if (stations.length > 0) {
-      map.fitBounds(L.latLngBounds(stations.map((station) => [station.lat, station.lng])), { padding: [24, 24] })
-    } else {
-      map.setView([53.9, 27.56], 6)
+    const bounds = stations.length > 0 ? L.latLngBounds(stations.map((station) => [station.lat, station.lng])) : null
+    // The stations' width : height on the map. A uniform zoom can only bring all four outermost
+    // stations to their edges when the map box has this shape, so the box is sized to it.
+    const southWest = bounds && L.CRS.EPSG3857.project(bounds.getSouthWest())
+    const northEast = bounds && L.CRS.EPSG3857.project(bounds.getNorthEast())
+    const aspect =
+      southWest && northEast && northEast.x > southWest.x && northEast.y > southWest.y
+        ? (northEast.x - southWest.x) / (northEast.y - southWest.y)
+        : null
+
+    const element = container.current
+    const area = element.parentElement!
+    const sizeToStations = () => {
+      if (aspect == null) return
+      const available = { width: area.clientWidth, height: area.clientHeight }
+      const inner = { width: available.width - 2 * MAP_PADDING, height: available.height - 2 * MAP_PADDING }
+      if (inner.width <= 0 || inner.height <= 0) return
+      const tooWide = inner.width / inner.height > aspect
+      element.style.width = `${tooWide ? inner.height * aspect + 2 * MAP_PADDING : available.width}px`
+      element.style.height = `${tooWide ? available.height : inner.width / aspect + 2 * MAP_PADDING}px`
     }
 
-    // The container can change size with the window or the page layout.
-    const resize = new ResizeObserver(() => map.invalidateSize())
-    resize.observe(container.current)
+    // Westmost, eastmost, northmost and southmost stations each near their own edge;
+    // the padding leaves room for half a temperature badge beyond the coordinate.
+    const fit = () => {
+      if (bounds) map.fitBounds(bounds, { padding: [MAP_PADDING, MAP_PADDING], animate: false })
+      else map.setView([53.9, 27.56], 6, { animate: false })
+    }
+
+    // The space can change with the window or the page layout; keep the stations fitted.
+    const layout = () => {
+      sizeToStations()
+      map.invalidateSize({ animate: false })
+      fit()
+    }
+    layout()
+    const resize = new ResizeObserver(layout)
+    resize.observe(area)
     return () => {
       resize.disconnect()
       map.remove()
@@ -140,7 +173,9 @@ function WeatherMap() {
   const reporting = state.map.stations.filter((station) => station.temperature != null).length
   return (
     <>
-      <div ref={container} className="weather-map" role="region" aria-label="Map of station temperatures" />
+      <div className="weather-map-area">
+        <div ref={container} className="weather-map" role="region" aria-label="Map of station temperatures" />
+      </div>
       <p className="weather-source">
         {reporting} of {state.map.stations.length} stations in Belarus reporting · Source: {state.map.source.name}
       </p>
