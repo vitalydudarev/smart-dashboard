@@ -118,43 +118,22 @@ function WeatherMap() {
     }
 
     const bounds = stations.length > 0 ? L.latLngBounds(stations.map((station) => [station.lat, station.lng])) : null
-    // The stations' width : height on the map. A uniform zoom can only bring all four outermost
-    // stations to their edges when the map box has this shape, so the box is sized to it.
-    const southWest = bounds && L.CRS.EPSG3857.project(bounds.getSouthWest())
-    const northEast = bounds && L.CRS.EPSG3857.project(bounds.getNorthEast())
-    const aspect =
-      southWest && northEast && northEast.x > southWest.x && northEast.y > southWest.y
-        ? (northEast.x - southWest.x) / (northEast.y - southWest.y)
-        : null
 
-    const element = container.current
-    const area = element.parentElement!
-    const sizeToStations = () => {
-      if (aspect == null) return
-      const available = { width: area.clientWidth, height: area.clientHeight }
-      const inner = { width: available.width - 2 * MAP_PADDING, height: available.height - 2 * MAP_PADDING }
-      if (inner.width <= 0 || inner.height <= 0) return
-      const tooWide = inner.width / inner.height > aspect
-      element.style.width = `${tooWide ? inner.height * aspect + 2 * MAP_PADDING : available.width}px`
-      element.style.height = `${tooWide ? available.height : inner.width / aspect + 2 * MAP_PADDING}px`
-    }
-
-    // Westmost, eastmost, northmost and southmost stations each near their own edge;
-    // the padding leaves room for half a temperature badge beyond the coordinate.
+    // As close as all the stations fit: the outermost ones reach the edges in whichever direction
+    // is tighter, and the map shows more of the surroundings in the other. The padding leaves room
+    // for half a temperature badge beyond the coordinate.
     const fit = () => {
       if (bounds) map.fitBounds(bounds, { padding: [MAP_PADDING, MAP_PADDING], animate: false })
       else map.setView([53.9, 27.56], 6, { animate: false })
     }
+    fit()
 
-    // The space can change with the window or the page layout; keep the stations fitted.
-    const layout = () => {
-      sizeToStations()
+    // The container can change size with the window or the page layout; keep the stations fitted.
+    const resize = new ResizeObserver(() => {
       map.invalidateSize({ animate: false })
       fit()
-    }
-    layout()
-    const resize = new ResizeObserver(layout)
-    resize.observe(area)
+    })
+    resize.observe(container.current)
     return () => {
       resize.disconnect()
       map.remove()
@@ -173,9 +152,7 @@ function WeatherMap() {
   const reporting = state.map.stations.filter((station) => station.temperature != null).length
   return (
     <>
-      <div className="weather-map-area">
-        <div ref={container} className="weather-map" role="region" aria-label="Map of station temperatures" />
-      </div>
+      <div ref={container} className="weather-map" role="region" aria-label="Map of station temperatures" />
       <p className="weather-source">
         {reporting} of {state.map.stations.length} stations in Belarus reporting · Source: {state.map.source.name}
       </p>
