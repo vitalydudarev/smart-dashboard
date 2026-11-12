@@ -35,8 +35,6 @@ const (
 	pogodaMaxStations = 5
 	// Stations report hourly at most; a short cache spares the API when a page asks for many.
 	pogodaFactTTL = 5 * time.Minute
-	// How many stations' observations to ask for at once when reading a whole country.
-	pogodaFactConcurrency = 8
 )
 
 var pogodaSource = Source{ID: "pogoda", Name: "Belhydromet"}
@@ -121,6 +119,25 @@ func (c *pogodaClient) cities(ctx context.Context) (map[string][]pogodaCity, err
 func (c *pogodaClient) fact(ctx context.Context, station int) (pogodaFact, error) {
 	var fact pogodaFact
 	return fact, c.get(ctx, "/weather-fact", url.Values{"station": {strconv.Itoa(station)}}, &fact)
+}
+
+// pogodaMeteoStation is one station's latest 10-minute observation from the maps/meteo-10min
+// endpoint. Readings are text with their units, e.g. "+0.9°C", "80%".
+type pogodaMeteoStation struct {
+	Name        string `json:"name"`
+	Description struct {
+		Date        pogodaTime `json:"date"`
+		Temperature string     `json:"temperature"`
+		Water       string     `json:"water"`
+	} `json:"description"`
+	// [longitude, latitude].
+	Coordinates []float64 `json:"coordinates"`
+}
+
+// meteo10min returns every station's latest 10-minute observation.
+func (c *pogodaClient) meteo10min(ctx context.Context) ([]pogodaMeteoStation, error) {
+	var stations []pogodaMeteoStation
+	return stations, c.get(ctx, "/maps/meteo-10min", nil, &stations)
 }
 
 // pogodaForecastStep is one forecast record, valid ADVANCE_TIME hours after DATES, one every 12 hours.
@@ -303,52 +320,58 @@ func (s *weatherService) observation(ctx context.Context, station weatherStation
 	}, nil
 }
 
-// StationReading is a station and its latest observation; Weather is nil when the station reported
-// none or could not be reached.
-type StationReading struct {
-	Station weatherStation
-	Weather *Weather
+// mapReading is one station's latest 10-minute observation for the weather map. Temperature,
+// Humidity and MeasuredAt are nil when the station did not report them or they do not parse.
+type mapReading struct {
+	Name        string
+	Lat, Lng    float64
+	Temperature *float64
+	Humidity    *float64
+	MeasuredAt  *time.Time
 }
 
-// countryWeather returns every station in a country (by code, e.g. "BY") with its latest
-// observation, in station list order. A station whose observation fails is still listed.
-func (s *weatherService) countryWeather(ctx context.Context, country string) ([]StationReading, error) {
-	stations, err := s.stations(ctx)
+// mapWeather returns every station's latest 10-minute observation, by name. Not cached: the
+// readings are replaced every 10 minutes. Entries without a usable position are left out.
+func (s *weatherService) mapWeather(ctx context.Context) ([]mapReading, error) {
+	stations, err := s.client.meteo10min(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	var readings []StationReading
+	readings := make([]mapReading, 0, len(stations))
 	for _, station := range stations {
-		if strings.EqualFold(station.Country, country) {
-			readings = append(readings, StationReading{Station: station})
+		// The coordinates are [longitude, latitude].
+		if len(station.Coordinates) != 2 {
+			continue
 		}
+		reading := mapReading{
+			Name:        strings.TrimSpace(station.Name),
+			Lat:         station.Coordinates[1],
+			Lng:         station.Coordinates[0],
+			Temperature: parseMeteoNumber(station.Description.Temperature, "°C"),
+			Humidity:    parseMeteoNumber(station.Description.Water, "%"),
+		}
+		if !station.Description.Date.IsZero() {
+			measuredAt := station.Description.Date.Time
+			reading.MeasuredAt = &measuredAt
+		}
+		readings = append(readings, reading)
 	}
-	sort.SliceStable(readings, func(i, j int) bool { return readings[i].Station.Name < readings[j].Station.Name })
-
-	var wg sync.WaitGroup
-	limit := make(chan struct{}, pogodaFactConcurrency)
-	for i := range readings {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			limit <- struct{}{}
-			defer func() { <-limit }()
-			weather, err := s.observation(ctx, readings[i].Station)
-			if err != nil {
-				if !errors.Is(err, errNoWeather) && ctx.Err() == nil {
-					log.Printf("pogoda station %d (%s): %v", readings[i].Station.ID, readings[i].Station.Name, err)
-				}
-				return
-			}
-			readings[i].Weather = &weather
-		}()
-	}
-	wg.Wait()
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+	sort.SliceStable(readings, func(i, j int) bool { return readings[i].Name < readings[j].Name })
 	return readings, nil
+}
+
+// parseMeteoNumber reads a number such as "+0.9°C" or "80%" with its unit after it; nil when the
+// text is empty or not a number.
+func parseMeteoNumber(text, unit string) *float64 {
+	text = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(text), unit))
+	if text == "" {
+		return nil
+	}
+	value, err := strconv.ParseFloat(strings.Replace(text, ",", ".", 1), 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+		return nil
+	}
+	return &value
 }
 
 // stations returns the cached station list, reloading it once a day. A stale list is served when a

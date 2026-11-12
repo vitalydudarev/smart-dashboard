@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -85,7 +83,7 @@ type weatherStationsResponse struct {
 
 type weatherMapResponse struct {
 	Country string `json:"country"`
-	// Every station in the country, by name.
+	// Every station, by name.
 	Stations []weatherMapStation `json:"stations"`
 	Source   Source              `json:"source"`
 }
@@ -93,7 +91,6 @@ type weatherMapResponse struct {
 // weatherMapStation is a station's position and latest observation; the observation fields are null
 // when it reported none.
 type weatherMapStation struct {
-	ID          int        `json:"id"`
 	Name        string     `json:"name"`
 	Lat         float64    `json:"lat"`
 	Lng         float64    `json:"lng"`
@@ -102,8 +99,8 @@ type weatherMapStation struct {
 	MeasuredAt  *time.Time `json:"measuredAt"`
 }
 
-// The country whose stations the weather map shows when none is asked for.
-const defaultMapCountry = "BY"
+// The country whose stations the weather map shows: the 10-minute observations cover Belarus only.
+const mapCountry = "BY"
 
 type forecastResponse struct {
 	StationID int               `json:"stationId"`
@@ -250,35 +247,31 @@ func (s *server) handleWeatherStations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, weatherStationsResponse{Stations: stations, Source: s.weather.source()})
 }
 
-// GET /api/weather/map?country=BY: every station in a country with its position and latest
-// observation, for a map. The country defaults to Belarus.
+// GET /api/weather/map: every Belarusian station with its position and latest 10-minute
+// observation, for a map.
 func (s *server) handleWeatherMap(w http.ResponseWriter, r *http.Request) {
-	country := strings.ToUpper(cmp.Or(r.URL.Query().Get("country"), defaultMapCountry))
-	if len(country) != 2 {
-		writeError(w, http.StatusBadRequest, "country must be a two-letter code")
-		return
-	}
 	if s.weather == nil {
 		writeError(w, http.StatusServiceUnavailable, "weather is not configured")
 		return
 	}
 
-	readings, err := s.weather.countryWeather(r.Context(), country)
+	readings, err := s.weather.mapWeather(r.Context())
 	if err != nil {
 		s.writeWeatherError(w, err)
 		return
 	}
 	stations := make([]weatherMapStation, len(readings))
 	for i, reading := range readings {
-		station := weatherMapStation{ID: reading.Station.ID, Name: reading.Station.Name, Lat: reading.Station.Lat, Lng: reading.Station.Lng}
-		if weather := reading.Weather; weather != nil {
-			station.Temperature = &weather.Temperature
-			station.Humidity = weather.Humidity
-			station.MeasuredAt = &weather.MeasuredAt
+		stations[i] = weatherMapStation{
+			Name:        reading.Name,
+			Lat:         reading.Lat,
+			Lng:         reading.Lng,
+			Temperature: reading.Temperature,
+			Humidity:    reading.Humidity,
+			MeasuredAt:  reading.MeasuredAt,
 		}
-		stations[i] = station
 	}
-	writeJSON(w, http.StatusOK, weatherMapResponse{Country: country, Stations: stations, Source: s.weather.source()})
+	writeJSON(w, http.StatusOK, weatherMapResponse{Country: mapCountry, Stations: stations, Source: s.weather.source()})
 }
 
 // GET /api/weather/stations/26850?lat=53.9&lng=27.56 (distance from Minsk when lat/lng are left out)

@@ -21,8 +21,9 @@ Base URL: `https://pogoda.by/api/v2` — `pogodaBaseURL` in [backend/pogoda.go](
 
 | Upstream URL | Query parameters | Client method | Used by |
 | --- | --- | --- | --- |
-| `https://pogoda.by/api/v2/weather-fact/all-cities` | — | `cities` | station list, `GET /api/weather/stations`, `GET /api/weather/map` |
-| `https://pogoda.by/api/v2/weather-fact` | `station` | `fact` | `GET /api/weather`, `GET /api/weather/stations/{id}`, `GET /api/weather/map` |
+| `https://pogoda.by/api/v2/weather-fact/all-cities` | — | `cities` | station list, `GET /api/weather/stations` |
+| `https://pogoda.by/api/v2/weather-fact` | `station` | `fact` | `GET /api/weather`, `GET /api/weather/stations/{id}` |
+| `https://pogoda.by/api/v2/maps/meteo-10min` | — | `meteo10min` | `GET /api/weather/map` |
 | `https://pogoda.by/api/v2/numeric-weather/12/{station}` | — | `forecast` | `GET /api/weather/stations/{id}/forecast` |
 | `https://pogoda.by/api/v2/radar/last` | — | `radars` | `GET /api/weather/radar` |
 | `https://pogoda.by/api/v2/satellite` | — | `satellites` | `GET /api/weather/satellite` |

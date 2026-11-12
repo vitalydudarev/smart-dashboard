@@ -41,11 +41,19 @@ const temperature = new Intl.NumberFormat('en-GB', {
   // Keeps a reading that rounds to zero from showing as -0.0.
   signDisplay: 'negative',
 })
+const signedTemperature = new Intl.NumberFormat('en-GB', {
+  maximumFractionDigits: 1,
+  minimumFractionDigits: 1,
+  // "+0.9", "-1.2"; a reading that rounds to zero shows as "0.0".
+  signDisplay: 'exceptZero',
+})
 const humidity = new Intl.NumberFormat('en-GB', { style: 'percent', maximumFractionDigits: 0 })
 // Measurement times are real instants, so unlike the date-only strings above they show in the viewer's zone.
 const dateTime = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
 
 export const formatTemperature = (celsius: number) => `${temperature.format(celsius)} °C`
+/** Degrees with their sign and one decimal, e.g. "+0.9", "-1.2". */
+export const formatSignedTemperature = (celsius: number) => signedTemperature.format(celsius)
 export const formatHumidity = (percent: number) => humidity.format(percent / 100)
 export const formatDateTime = (iso: string) => dateTime.format(new Date(iso))
 

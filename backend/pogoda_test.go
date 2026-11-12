@@ -34,6 +34,14 @@ const fakeForecast = `{
 }
 }`
 
+// Out of name order. Глубокое has no reading; Нигде has no position.
+const fakeMeteo10min = `[
+ {"name":"Верхнедвинск","description":{"date":"2026-11-12T18:00:00.000+00:00","temperature":"-1.2°C","wind":"3 м/с, Ю-В","water":"97%","pressStation":"985 гПа [739 мм рт ст], падает ","pressSea":"1001 гПа [751 мм рт ст], падает "},"coordinates":[27.94,55.821]},
+ {"name":"Браслав","description":{"date":"2026-11-12T18:00:00.000+00:00","temperature":"+0.9°C","wind":"5 м/с, Ю-В","water":"80%","pressStation":"978 гПа [733 мм рт ст], падает ","pressSea":"1000 гПа [750 мм рт ст], падает "},"coordinates":[27.021,55.642]},
+ {"name":"Глубокое","description":{"date":"","temperature":"","water":""},"coordinates":[27.69,55.14]},
+ {"name":"Нигде","description":{"date":"2026-11-12T18:00:00.000+00:00","temperature":"+1.0°C","water":"50%"},"coordinates":[]}
+]`
+
 type fakePogoda struct {
 	citiesRequests   atomic.Int32
 	factRequests     atomic.Int32
@@ -60,6 +68,8 @@ func (f *fakePogoda) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.URL.Path {
+	case "/maps/meteo-10min":
+		fmt.Fprint(w, fakeMeteo10min)
 	case "/radar/last":
 		fmt.Fprint(w, cmp.Or(f.radars, `{"UMII":"Radar_26666_MAP_PHEN_20261108_1120.png","UMMN":"Radar_26850_MAP_PHEN_20261108_1120.png"}`))
 	case "/satellite":
@@ -339,29 +349,43 @@ func TestWeatherImagesMissing(t *testing.T) {
 }
 
 func TestWeatherMap(t *testing.T) {
-	// Борисов reports no temperature; Узда has no coordinates and Берлин is in another country.
-	handler := newWeatherTestServer(t, &fakePogoda{empty: map[string]bool{"26759": true}})
+	handler := newWeatherTestServer(t, &fakePogoda{})
 	var got weatherMapResponse
 	if code := get(t, handler, "/api/weather/map", &got); code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", code)
 	}
-	if got.Country != "BY" || len(got.Stations) != 2 {
-		t.Fatalf("got %+v, want the two BY stations with coordinates", got)
+	if got.Country != "BY" || len(got.Stations) != 3 {
+		t.Fatalf("got %+v, want the three stations with a position", got)
 	}
-	borisov, minsk := got.Stations[0], got.Stations[1]
-	if borisov.ID != 26759 || borisov.Temperature != nil || borisov.MeasuredAt != nil || borisov.Lat != 54.23 {
-		t.Errorf("Борисов = %+v, want no reading", borisov)
+	braslav, verkhnedvinsk, glubokoe := got.Stations[0], got.Stations[1], got.Stations[2]
+	if braslav.Name != "Браслав" || braslav.Lat != 55.642 || braslav.Lng != 27.021 ||
+		braslav.Temperature == nil || *braslav.Temperature != 0.9 ||
+		braslav.Humidity == nil || *braslav.Humidity != 80 ||
+		braslav.MeasuredAt == nil || braslav.MeasuredAt.Format(time.RFC3339) != "2026-11-12T18:00:00Z" {
+		t.Errorf("Браслав = %+v, want +0.9 °C, 80%% at 55.642, 27.021", braslav)
 	}
-	if minsk.ID != 26850 || minsk.Temperature == nil || *minsk.Temperature != 3.8 || minsk.Lng != 27.63 {
-		t.Errorf("Минск = %+v, want 3.8 °C", minsk)
+	if glubokoe.Name != "Глубокое" || glubokoe.Temperature != nil || glubokoe.Humidity != nil || glubokoe.MeasuredAt != nil {
+		t.Errorf("Глубокое = %+v, want no reading", glubokoe)
 	}
+	if verkhnedvinsk.Name != "Верхнедвинск" || verkhnedvinsk.Temperature == nil || *verkhnedvinsk.Temperature != -1.2 {
+		t.Errorf("Верхнедвинск = %+v, want -1.2 °C", verkhnedvinsk)
+	}
+}
 
-	var de weatherMapResponse
-	if code := get(t, handler, "/api/weather/map?country=de", &de); code != http.StatusOK || len(de.Stations) != 1 || de.Stations[0].ID != 10384 {
-		t.Errorf("country=de: status %d, got %+v", code, de)
+func TestParseMeteoNumber(t *testing.T) {
+	for text, want := range map[string]float64{"+0.9°C": 0.9, "-12.4°C": -12.4, "0.0°C": 0, " 80% ": 80, "+1,5°C": 1.5} {
+		unit := "°C"
+		if strings.Contains(text, "%") {
+			unit = "%"
+		}
+		if got := parseMeteoNumber(text, unit); got == nil || *got != want {
+			t.Errorf("parseMeteoNumber(%q) = %v, want %v", text, got, want)
+		}
 	}
-	if code := get(t, handler, "/api/weather/map?country=BLR", nil); code != http.StatusBadRequest {
-		t.Errorf("country=BLR: status = %d, want 400", code)
+	for _, text := range []string{"", "°C", "н/д", "NaN°C"} {
+		if got := parseMeteoNumber(text, "°C"); got != nil {
+			t.Errorf("parseMeteoNumber(%q) = %v, want nil", text, *got)
+		}
 	}
 }
 

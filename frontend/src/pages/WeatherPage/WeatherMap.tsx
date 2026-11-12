@@ -2,11 +2,8 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef, useState } from 'react'
 import { type WeatherMap as WeatherMapData, type WeatherMapStation, fetchWeatherMap } from '../../api/weather.ts'
-import { formatDateTime, formatHumidity, formatTemperature } from '../../utils/format.ts'
+import { formatDateTime, formatHumidity, formatSignedTemperature } from '../../utils/format.ts'
 import './WeatherMap.scss'
-
-/** The country whose stations the map shows. */
-const COUNTRY = 'BY'
 
 /** Space between the outermost stations and the map's edges: about half a temperature badge. */
 const MAP_PADDING = 24
@@ -39,7 +36,7 @@ function temperatureColor(celsius: number): string {
   return `hsl(${Math.round(hue)} 70% 42%)`
 }
 
-/** The marker: the rounded temperature on a disc coloured by it, or a grey dot without a reading. */
+/** The marker: the temperature as "+X.Y" on a disc coloured by it, or a grey dot without a reading. */
 function stationIcon(station: WeatherMapStation): L.DivIcon {
   const element = document.createElement('span')
   if (station.temperature == null) {
@@ -48,11 +45,10 @@ function stationIcon(station: WeatherMapStation): L.DivIcon {
   }
   element.className = 'weather-map-marker'
   element.style.background = temperatureColor(station.temperature)
-  // Math.round(-0.4) is -0, which would print as "-0".
-  const label = `${Math.round(station.temperature) || 0}°`
+  const label = formatSignedTemperature(station.temperature)
   element.textContent = label
-  // Room for "-12°" as well as "4°".
-  return L.divIcon({ html: element, className: '', iconSize: [label.length > 3 ? 42 : 34, 22] })
+  // Room for "-12.3" as well as "+0.9".
+  return L.divIcon({ html: element, className: '', iconSize: [label.length > 4 ? 46 : 40, 22] })
 }
 
 /** The popup: built from DOM nodes so station names are never parsed as HTML. */
@@ -69,7 +65,7 @@ function stationPopup(station: WeatherMapStation): HTMLElement {
   if (station.temperature == null) {
     line('weather-map-popup-detail', 'No current reading')
   } else {
-    line('weather-map-popup-temperature', formatTemperature(station.temperature))
+    line('weather-map-popup-temperature', formatSignedTemperature(station.temperature))
     if (station.humidity != null) line('weather-map-popup-detail', `Humidity ${formatHumidity(station.humidity)}`)
     if (station.measuredAt) line('weather-map-popup-detail', formatDateTime(station.measuredAt))
   }
@@ -83,7 +79,7 @@ function WeatherMap() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchWeatherMap(COUNTRY, controller.signal)
+    fetchWeatherMap(controller.signal)
       .then((map) => setState({ status: 'loaded', map }))
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
@@ -110,7 +106,7 @@ function WeatherMap() {
       L.marker([station.lat, station.lng], {
         icon: stationIcon(station),
         title: station.name,
-        alt: station.temperature == null ? station.name : `${station.name}, ${formatTemperature(station.temperature)}`,
+        alt: station.temperature == null ? station.name : `${station.name}, ${formatSignedTemperature(station.temperature)} °C`,
         riseOnHover: true,
       })
         .bindPopup(() => stationPopup(station))

@@ -109,7 +109,6 @@ export function currentWeatherMapImage(): Promise<WeatherImage> {
 
 /** A station's position and latest observation; the observation fields are null when it reported none. */
 export interface WeatherMapStation {
-  id: number
   name: string
   lat: number
   lng: number
@@ -124,12 +123,12 @@ export interface WeatherMapStation {
 export interface WeatherMap {
   /** Country code, e.g. BY. */
   country: string
-  /** Every station in the country, by name. */
+  /** Every station, by name. */
   stations: WeatherMapStation[]
   source: RateSource
 }
 
-/** Every station in a country with its latest observation. */
-export function fetchWeatherMap(country: string, signal?: AbortSignal): Promise<WeatherMap> {
-  return getJson('/api/weather/map', { country }, signal)
+/** Every Belarusian station with its latest 10-minute observation. */
+export function fetchWeatherMap(signal?: AbortSignal): Promise<WeatherMap> {
+  return getJson('/api/weather/map', {}, signal)
 }
