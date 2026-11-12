@@ -34,8 +34,8 @@ type StationsState =
   | { status: 'loaded'; located: boolean; coords: Coordinates | null; result: WeatherStations }
 
 type StationWeatherState =
-  | { status: 'idle' }
-  | { status: 'loading' }
+  // Not loaded yet: waiting to scroll into view, or its request is in flight.
+  | { status: 'pending' }
   | { status: 'missing' }
   | { status: 'error' }
   | { status: 'loaded'; weather: Weather }
@@ -67,35 +67,30 @@ function useMediaQuery(query: string): boolean {
   )
 }
 
-/** Calls back once, the first time the element scrolls near the viewport. */
-function useFirstVisible<T extends Element>(onVisible: () => void) {
+/**
+ * Whether the element is on or near the screen, followed while `watching`; once watching stops,
+ * the last value is kept. Always true where IntersectionObserver is unsupported.
+ */
+function useNearViewport<T extends Element>(watching: boolean) {
   const ref = useRef<T>(null)
-  const callback = useRef(onVisible)
-  useEffect(() => {
-    callback.current = onVisible
-  })
+  const supported = 'IntersectionObserver' in window
+  const [visible, setVisible] = useState(!supported)
 
   useEffect(() => {
     const element = ref.current
-    if (!element) return
-    if (!('IntersectionObserver' in window)) {
-      callback.current()
-      return
-    }
+    if (!element || !watching || !supported) return
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          observer.disconnect()
-          callback.current()
-        }
+        const entry = entries[entries.length - 1]
+        if (entry) setVisible(entry.isIntersecting)
       },
       { rootMargin: '200px 0px' },
     )
     observer.observe(element)
     return () => observer.disconnect()
-  }, [])
+  }, [watching, supported])
 
-  return ref
+  return [ref, visible] as const
 }
 
 /**
@@ -118,8 +113,7 @@ function StationRow({
   onSelect: (id: number) => void
   forecast?: ReactNode
 }) {
-  const [state, setState] = useState<StationWeatherState>({ status: 'idle' })
-  const controller = useRef<AbortController | null>(null)
+  const [state, setState] = useState<StationWeatherState>({ status: 'pending' })
   const button = useRef<HTMLButtonElement>(null)
   // Where the row was on screen when clicked. Opening it can close a forecast above it, which would
   // otherwise pull the row up and out of view.
@@ -132,14 +126,20 @@ function StationRow({
     if (shift !== 0) window.scrollBy(0, shift)
   }, [selected])
 
-  const ref = useFirstVisible<HTMLLIElement>(() => {
-    const current = new AbortController()
-    controller.current = current
-    setState({ status: 'loading' })
-    fetchStationWeather(station.id, coords, current.signal)
+  // Visibility matters only until the weather has arrived (or failed for good).
+  const pending = state.status === 'pending'
+  const [ref, visible] = useNearViewport<HTMLLIElement>(pending)
+
+  // Load while the row is near the screen. A row scrolled away before its weather arrives cancels
+  // the request (it stays pending), so a fast scroll does not leave a queue of requests behind;
+  // it loads again if it comes back.
+  useEffect(() => {
+    if (!visible) return
+    const controller = new AbortController()
+    fetchStationWeather(station.id, coords, controller.signal)
       .then((weather) => setState({ status: 'loaded', weather }))
       .catch((error: unknown) => {
-        if (current.signal.aborted) return
+        if (controller.signal.aborted) return
         if (error instanceof HttpError && error.status === 404) {
           setState({ status: 'missing' })
         } else {
@@ -147,13 +147,13 @@ function StationRow({
           setState({ status: 'error' })
         }
       })
-  })
-  useEffect(() => () => controller.current?.abort(), [])
+    return () => controller.abort()
+  }, [visible, station.id, coords])
 
   const weather = state.status === 'loaded' ? state.weather : null
 
   return (
-    <li ref={ref} className="weather-station" aria-busy={state.status === 'loading' || state.status === 'idle'}>
+    <li ref={ref} className="weather-station" aria-busy={state.status === 'pending'}>
       <button
         type="button"
         className="weather-station-button"
