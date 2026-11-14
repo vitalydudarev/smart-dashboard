@@ -6,7 +6,7 @@ import { formatDateTime, formatHumidity, formatSignedTemperature } from '../../u
 import './WeatherMap.scss'
 
 /** Space between the outermost stations and the map's edges: about half a temperature badge. */
-const MAP_PADDING = 24
+const MAP_PADDING = 144
 
 type MapState =
   | { status: 'loading' }
