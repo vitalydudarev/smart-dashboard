@@ -9,6 +9,10 @@
   background: var(--app-surface-sunken);
 }
 
+.segmented--vertical {
+  flex-direction: column;
+}
+
 .segment {
   display: inline-flex;
   align-items: center;

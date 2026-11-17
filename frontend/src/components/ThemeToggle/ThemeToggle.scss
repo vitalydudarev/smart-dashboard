@@ -1,0 +1,12 @@
+.theme-toggle {
+  position: relative;
+}
+
+// Drops straight down from the trigger, the same width, so the options line up under the icon.
+.theme-toggle-menu {
+  position: absolute;
+  top: calc(100% + var(--app-space-1));
+  right: 0;
+  z-index: 50;
+  box-shadow: var(--app-shadow);
+}
