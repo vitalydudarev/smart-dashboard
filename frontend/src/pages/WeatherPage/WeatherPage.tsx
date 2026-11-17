@@ -1,4 +1,4 @@
-import { ArrowLeft, Droplets, Search, X } from 'lucide-react'
+import { ArrowLeft, Droplets, Search, Star, X } from 'lucide-react'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { HttpError } from '../../api/rates.ts'
@@ -24,6 +24,7 @@ import {
   formatWeekdayDate,
 } from '../../utils/format.ts'
 import { currentPosition } from '../../utils/geolocation.ts'
+import { useDefaultStation } from '../../weather/useDefaultStation.ts'
 import WeatherMap from './WeatherMap.tsx'
 import './WeatherPage.scss'
 
@@ -96,7 +97,7 @@ function useNearViewport<T extends Element>(watching: boolean) {
 /**
  * One station; its weather loads when the row first scrolls into view, so a long list stays cheap.
  * Clicking the row shows its forecast: beside the list, or on narrow screens in `forecast` under the row,
- * which then expands and collapses.
+ * which then expands and collapses. The star beside it makes the station the one the dashboard shows.
  */
 function StationRow({
   station,
@@ -114,6 +115,8 @@ function StationRow({
   forecast?: ReactNode
 }) {
   const [state, setState] = useState<StationWeatherState>({ status: 'pending' })
+  const [defaultId, setDefaultId] = useDefaultStation()
+  const isDefault = defaultId === station.id
   const button = useRef<HTMLButtonElement>(null)
   // Where the row was on screen when clicked. Opening it can close a forecast above it, which would
   // otherwise pull the row up and out of view.
@@ -154,45 +157,57 @@ function StationRow({
 
   return (
     <li ref={ref} className="weather-station" aria-busy={state.status === 'pending'}>
-      <button
-        type="button"
-        className="weather-station-button"
-        aria-pressed={expandable ? undefined : selected}
-        aria-expanded={expandable ? selected : undefined}
-        ref={button}
-        onClick={(event) => {
-          clickedAt.current = event.currentTarget.getBoundingClientRect().top
-          onSelect(station.id)
-        }}
-      >
-        <div className="weather-station-place">
-          <span className="weather-station-name">
-            {station.name}, {station.country}
-          </span>
-          <span className="weather-station-distance">{formatDistance(station.distanceKm)} away</span>
-        </div>
-        <div className="weather-station-reading">
-          <span className="weather-station-temperature">{weather ? formatTemperature(weather.temperature) : '—'}</span>
-          <span className="weather-station-detail">
-            {weather ? (
-              <>
-                <span className="weather-station-humidity">
-                  <Droplets size={14} aria-hidden="true" />
-                  <span className="app-visually-hidden">Humidity </span>
-                  {weather.humidity != null ? formatHumidity(weather.humidity) : '—'}
-                </span>
-                <time dateTime={weather.measuredAt}>{formatDateTime(weather.measuredAt)}</time>
-              </>
-            ) : state.status === 'missing' ? (
-              'No current observation'
-            ) : state.status === 'error' ? (
-              <span className="weather-station-warning">Unavailable</span>
-            ) : (
-              'Loading…'
-            )}
-          </span>
-        </div>
-      </button>
+      <div className="weather-station-row">
+        <button
+          type="button"
+          className="weather-station-button"
+          aria-pressed={expandable ? undefined : selected}
+          aria-expanded={expandable ? selected : undefined}
+          ref={button}
+          onClick={(event) => {
+            clickedAt.current = event.currentTarget.getBoundingClientRect().top
+            onSelect(station.id)
+          }}
+        >
+          <div className="weather-station-place">
+            <span className="weather-station-name">
+              {station.name}, {station.country}
+            </span>
+            <span className="weather-station-distance">{formatDistance(station.distanceKm)} away</span>
+          </div>
+          <div className="weather-station-reading">
+            <span className="weather-station-temperature">{weather ? formatTemperature(weather.temperature) : '—'}</span>
+            <span className="weather-station-detail">
+              {weather ? (
+                <>
+                  <span className="weather-station-humidity">
+                    <Droplets size={14} aria-hidden="true" />
+                    <span className="app-visually-hidden">Humidity </span>
+                    {weather.humidity != null ? formatHumidity(weather.humidity) : '—'}
+                  </span>
+                  <time dateTime={weather.measuredAt}>{formatDateTime(weather.measuredAt)}</time>
+                </>
+              ) : state.status === 'missing' ? (
+                'No current observation'
+              ) : state.status === 'error' ? (
+                <span className="weather-station-warning">Unavailable</span>
+              ) : (
+                'Loading…'
+              )}
+            </span>
+          </div>
+        </button>
+        <button
+          type="button"
+          className="weather-station-default"
+          aria-pressed={isDefault}
+          aria-label={`Show ${station.name} on the dashboard`}
+          title={isDefault ? 'Shown on the dashboard (click to use the nearest station)' : 'Show on the dashboard'}
+          onClick={() => setDefaultId(isDefault ? null : station.id)}
+        >
+          <Star size={18} aria-hidden="true" fill={isDefault ? 'currentColor' : 'none'} />
+        </button>
+      </div>
       {forecast}
     </li>
   )

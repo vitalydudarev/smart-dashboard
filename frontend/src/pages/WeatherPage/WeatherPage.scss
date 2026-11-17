@@ -114,38 +114,75 @@
   border-top: 1px solid var(--app-border);
 }
 
-.weather-station-button {
+.weather-station-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-4);
-  width: 100%;
-  padding: var(--app-space-3) var(--app-space-5);
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+  align-items: stretch;
   transition: background-color var(--app-transition);
 
   &:hover {
     background: var(--app-surface-hover);
   }
 
-  &:focus-visible {
-    outline: none;
-    box-shadow: inset 0 0 0 2px var(--app-accent);
-  }
-
-  &[aria-pressed='true'],
-  &[aria-expanded='true'] {
+  // The selected row's highlight spans the star too.
+  &:has(> .weather-station-button[aria-pressed='true']),
+  &:has(> .weather-station-button[aria-expanded='true']) {
     background: var(--app-accent-soft);
     box-shadow: inset 3px 0 0 var(--app-accent);
 
     .weather-station-name {
       color: var(--app-accent-soft-fg);
     }
+  }
+}
+
+.weather-station-button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-4);
+  min-width: 0;
+  padding: var(--app-space-3) var(--app-space-2) var(--app-space-3) var(--app-space-5);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--app-accent);
+  }
+}
+
+// Makes the station the one the dashboard's weather widget shows.
+.weather-station-default {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  margin-right: var(--app-space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--app-fg-subtle);
+  cursor: pointer;
+  transition: color var(--app-transition);
+
+  &:hover {
+    color: var(--app-fg);
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-radius: var(--app-radius-sm);
+    box-shadow: inset 0 0 0 2px var(--app-accent);
+  }
+
+  &[aria-pressed='true'] {
+    color: var(--app-warning);
   }
 }
 
@@ -494,7 +531,14 @@
     width: 100%;
   }
 
-  .weather-station-button,
+  .weather-station-button {
+    padding: var(--app-space-3) var(--app-space-1) var(--app-space-3) var(--app-space-4);
+  }
+
+  .weather-station-default {
+    margin-right: var(--app-space-1);
+  }
+
   .weather-forecast {
     padding: var(--app-space-3) var(--app-space-4);
   }

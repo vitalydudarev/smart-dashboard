@@ -2,9 +2,17 @@ import { ChevronDown, ChevronRight, Droplets, MapPin } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { HttpError } from '../../api/rates.ts'
-import { type Coordinates, type StationForecast, type Weather, fetchStationForecast, fetchWeather } from '../../api/weather.ts'
+import {
+  type Coordinates,
+  type StationForecast,
+  type Weather,
+  fetchStationForecast,
+  fetchStationWeather,
+  fetchWeather,
+} from '../../api/weather.ts'
 import { formatDateTime, formatHumidity, formatTemperature, formatWeekdayDate } from '../../utils/format.ts'
 import { currentPosition } from '../../utils/geolocation.ts'
+import { useDefaultStation } from '../../weather/useDefaultStation.ts'
 import './WeatherWidget.scss'
 
 const refreshInterval = 5 * 60 * 1000
@@ -76,7 +84,8 @@ function WidgetForecast({ stationId, id }: { stationId: number; id: string }) {
 }
 
 /**
- * Current temperature and humidity at the Belhydromet station nearest the viewer, refreshed every 5 minutes;
+ * Current temperature and humidity at the station starred on the weather page, or else the Belhydromet station
+ * nearest the viewer (also the fallback while the starred one has no observation), refreshed every 5 minutes;
  * opens the page with the weather at other stations. The button along the bottom drops down the station's forecast.
  */
 function WeatherWidget() {
@@ -85,17 +94,31 @@ function WeatherWidget() {
   const widget = useRef<HTMLDivElement>(null)
   const forecastId = useId()
 
-  useEffect(() => {
-    let disposed = false
-    let controller: AbortController | undefined
-    let timer: ReturnType<typeof setInterval> | undefined
+  const [defaultId] = useDefaultStation()
 
-    const load = (coords: Coordinates | null) => {
+  useEffect(() => {
+    let controller: AbortController | undefined
+    let position: Promise<Coordinates | null> | undefined
+
+    // Asks for the viewer's location only when the nearest station is needed, and only once.
+    const nearest = async (signal: AbortSignal) => fetchWeather(await (position ??= currentPosition()), signal)
+
+    const fetchShown = (signal: AbortSignal) =>
+      defaultId == null
+        ? nearest(signal)
+        : fetchStationWeather(defaultId, null, signal).catch((error: unknown) => {
+            if (error instanceof HttpError && error.status === 404) return nearest(signal)
+            throw error
+          })
+
+    const load = () => {
       controller?.abort()
       const current = new AbortController()
       controller = current
-      fetchWeather(coords, current.signal)
-        .then((weather) => setState({ status: 'loaded', weather }))
+      fetchShown(current.signal)
+        .then((weather) => {
+          if (!current.signal.aborted) setState({ status: 'loaded', weather })
+        })
         .catch((error: unknown) => {
           if (!current.signal.aborted) {
             console.error(error)
@@ -104,18 +127,14 @@ function WeatherWidget() {
         })
     }
 
-    void currentPosition().then((coords) => {
-      if (disposed) return
-      load(coords)
-      timer = setInterval(() => load(coords), refreshInterval)
-    })
+    load()
+    const timer = setInterval(load, refreshInterval)
 
     return () => {
-      disposed = true
       controller?.abort()
       clearInterval(timer)
     }
-  }, [])
+  }, [defaultId])
 
   // The forecast covers what is below the widget, so Escape or a click elsewhere folds it back.
   useEffect(() => {
