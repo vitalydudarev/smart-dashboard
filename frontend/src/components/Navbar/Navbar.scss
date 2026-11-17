@@ -21,6 +21,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--app-space-2);
+  min-width: 0;
   font-weight: 600;
   letter-spacing: -0.01em;
   white-space: nowrap;
@@ -36,6 +37,33 @@
   align-items: center;
   gap: var(--app-space-2);
   margin-left: auto;
+}
+
+.brand-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// The USD/BYN rate and the temperature, compact enough to fit beside the brand on a phone.
+.header-stat {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--app-space-2);
+  border-radius: var(--app-radius-sm);
+  color: var(--app-fg-muted);
+  font-size: var(--app-text-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition:
+    background var(--app-transition),
+    color var(--app-transition);
+
+  &:hover {
+    background: var(--app-surface-hover);
+    color: var(--app-fg);
+  }
 }
 
 @media (width <= 720px) {
