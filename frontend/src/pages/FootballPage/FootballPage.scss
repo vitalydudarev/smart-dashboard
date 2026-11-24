@@ -66,9 +66,14 @@
   font-size: var(--app-text-lg);
 }
 
+// On a light tile: the Champions League and Premier League logos are dark and vanish on the dark theme.
 .football-league-logo {
-  width: 24px;
-  height: 24px;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+  border-radius: var(--app-radius-sm);
+  background: #fff;
   object-fit: contain;
 }
 

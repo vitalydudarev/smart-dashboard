@@ -367,7 +367,8 @@ type footballMatchesResponse struct {
 	Source    Source    `json:"source"`
 }
 
-// GET /api/football/matches: today's and tomorrow's matches of the shown leagues, refreshed hourly.
+// GET /api/football/matches: today's and tomorrow's Champions League, Premier League, La Liga and
+// Serie A matches, refreshed hourly.
 func (s *server) handleFootballMatches(w http.ResponseWriter, r *http.Request) {
 	snapshot, err := s.football.matches(r.Context())
 	if errors.Is(err, errFootballNotConfigured) {

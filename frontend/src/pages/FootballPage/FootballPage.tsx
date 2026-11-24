@@ -15,7 +15,7 @@ function byDay(matches: FootballMatch[]): [string, FootballMatch[]][] {
   return [...days]
 }
 
-/** Every Premier League, La Liga and Serie A match today and tomorrow, by league and then by day. */
+/** Every Champions League, Premier League, La Liga and Serie A match today and tomorrow, by league and then by day. */
 function FootballPage() {
   const state = useFootballMatches()
 

@@ -197,3 +197,23 @@ func TestFootballRefreshIgnoresACancelledRequest(t *testing.T) {
 		t.Fatalf("got %d matches, %v; want 2", len(snapshot.Matches), err)
 	}
 }
+
+func TestFootballMatchesRefetchWhenTheLeaguesChange(t *testing.T) {
+	cachePath := filepath.Join(t.TempDir(), "football.json")
+	fake := &fakeFootball{}
+	service, _ := newTestFootball(t, fake, cachePath)
+	if _, err := service.matches(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// As saved before the Champions League was added.
+	service.snapshot.LeagueIDs = []int{39, 140, 135}
+	service.save(*service.snapshot)
+
+	restarted, _ := newTestFootball(t, fake, cachePath)
+	if _, err := restarted.matches(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.requests.Load(); got != 2*footballDays {
+		t.Errorf("%d upstream requests, want %d: the saved snapshot covers other leagues", got, 2*footballDays)
+	}
+}

@@ -41,6 +41,7 @@ type footballLeague struct {
 }
 
 var footballLeagues = []footballLeague{
+	{ID: 2, Name: "UEFA Champions League", Country: "Europe", Logo: "https://media.api-sports.io/football/leagues/2.png"},
 	{ID: 39, Name: "Premier League", Country: "England", Logo: "https://media.api-sports.io/football/leagues/39.png"},
 	{ID: 140, Name: "La Liga", Country: "Spain", Logo: "https://media.api-sports.io/football/leagues/140.png"},
 	{ID: 135, Name: "Serie A", Country: "Italy", Logo: "https://media.api-sports.io/football/leagues/135.png"},
@@ -202,9 +203,19 @@ func newFootballMatch(f apiFixture) footballMatch {
 type footballSnapshot struct {
 	FetchedAt time.Time `json:"fetchedAt"`
 	// The UTC days covered, as YYYY-MM-DD.
-	From    string          `json:"from"`
-	To      string          `json:"to"`
-	Matches []footballMatch `json:"matches"`
+	From string `json:"from"`
+	To   string `json:"to"`
+	// The ids of the leagues kept, so a snapshot saved before the list changed is refetched.
+	LeagueIDs []int           `json:"leagueIds"`
+	Matches   []footballMatch `json:"matches"`
+}
+
+func shownLeagueIDs() []int {
+	ids := make([]int, len(footballLeagues))
+	for i, league := range footballLeagues {
+		ids[i] = league.ID
+	}
+	return ids
 }
 
 // footballService caches the matches for an hour, in memory and in a file so restarting the backend
@@ -252,7 +263,8 @@ func (s *footballService) matches(ctx context.Context) (footballSnapshot, error)
 
 	now := s.now().UTC()
 	today := now.Format(dateLayout)
-	fresh := s.snapshot != nil && s.snapshot.From == today && now.Sub(s.snapshot.FetchedAt) < footballTTL
+	fresh := s.snapshot != nil && s.snapshot.From == today && now.Sub(s.snapshot.FetchedAt) < footballTTL &&
+		slices.Equal(s.snapshot.LeagueIDs, shownLeagueIDs())
 	backingOff := now.Sub(s.lastError) < footballRetryAfter
 	if fresh || (backingOff && s.snapshot != nil) {
 		return *s.snapshot, nil
@@ -282,6 +294,7 @@ func (s *footballService) fetch(ctx context.Context, now time.Time) (footballSna
 		FetchedAt: now,
 		From:      start.Format(dateLayout),
 		To:        start.AddDate(0, 0, footballDays-1).Format(dateLayout),
+		LeagueIDs: shownLeagueIDs(),
 		Matches:   []footballMatch{},
 	}
 	for i := range footballDays {

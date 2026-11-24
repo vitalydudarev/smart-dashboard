@@ -27,7 +27,7 @@ function FootballWidget() {
     <Link
       className="football-widget"
       to="/football"
-      aria-label="Top football matches. View every Premier League, La Liga and Serie A match"
+      aria-label="Top football matches. View every Champions League, Premier League, La Liga and Serie A match"
       aria-busy={state.status === 'loading'}
     >
       <span className="football-widget-title">
