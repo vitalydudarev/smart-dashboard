@@ -27,6 +27,7 @@ Base URL: `https://pogoda.by/api/v2` — `pogodaBaseURL` in [backend/pogoda.go](
 | `https://pogoda.by/api/v2/numeric-weather/12/{station}` | — | `forecast` | `GET /api/weather/stations/{id}/forecast` |
 | `https://pogoda.by/api/v2/radar/last` | — | `radars` | `GET /api/weather/radar` |
 | `https://pogoda.by/api/v2/satellite` | — | `satellites` | `GET /api/weather/satellite` |
+| `https://pogoda.by/api/v2/maps/static-fact` | — | `staticFacts` | `GET /api/weather/snow-cover` (`SNOW_UKR`), `GET /api/weather/precipitation/belarus` (`RB_PRC_SYN`), `GET /api/weather/precipitation/region` (`RB_PRC`) |
 
 ### Image files
 
@@ -37,6 +38,7 @@ The backend does not fetch these; it returns the URLs and the browser loads them
 | --- | --- |
 | `https://pogoda.by/files/radars/static/{locationId}/{fileName}` (radar `UMMN`, Minsk) | `GET /api/weather/radar` |
 | `https://pogoda.by/files/satellite/{fileName}` (channel `012`, `.jpg`) | `GET /api/weather/satellite` |
+| `https://pogoda.by/files/maps/static/fact/{fileName}` (or the URL/path `maps/static-fact` gives) | `GET /api/weather/snow-cover`, `GET /api/weather/precipitation/{belarus,region}` |
 
 ## Frontend (loaded directly by the browser)
 

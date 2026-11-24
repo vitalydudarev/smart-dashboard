@@ -36,6 +36,9 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/weather/map", s.handleWeatherMap)
 	mux.HandleFunc("GET /api/weather/radar", s.handleWeatherImage((*weatherService).radarImage))
 	mux.HandleFunc("GET /api/weather/satellite", s.handleWeatherImage((*weatherService).satelliteImage))
+	mux.HandleFunc("GET /api/weather/snow-cover", s.handleWeatherImage(staticMap("SNOW_UKR")))
+	mux.HandleFunc("GET /api/weather/precipitation/belarus", s.handleWeatherImage(staticMap("RB_PRC_SYN")))
+	mux.HandleFunc("GET /api/weather/precipitation/region", s.handleWeatherImage(staticMap("RB_PRC")))
 	return mux
 }
 
@@ -325,8 +328,8 @@ func (s *server) handleStationForecast(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, body)
 }
 
-// GET /api/weather/radar and GET /api/weather/satellite: the URL of the latest radar map or
-// satellite image, and when it was taken.
+// GET /api/weather/radar, /satellite, /snow-cover and /precipitation/{belarus,region}: the URL of
+// the latest radar map, satellite image or static weather map, and when it was taken if known.
 func (s *server) handleWeatherImage(latest func(*weatherService, context.Context) (weatherImage, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.weather == nil {

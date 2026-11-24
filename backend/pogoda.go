@@ -26,6 +26,8 @@ const (
 	pogodaRadarKey = "UMMN"
 	// The satellite channel whose latest image is shown.
 	pogodaSatelliteKey = "012"
+	// Static weather maps from maps/static-fact are served from here when the API names only a file.
+	pogodaStaticFactPath = "/maps/static/fact/"
 	pogodaTimeout      = 5 * time.Second
 	// The station list changes rarely.
 	pogodaCitiesTTL = 24 * time.Hour
@@ -167,6 +169,13 @@ func (c *pogodaClient) radars(ctx context.Context) (map[string]string, error) {
 func (c *pogodaClient) satellites(ctx context.Context) (map[string][]json.RawMessage, error) {
 	var byChannel map[string][]json.RawMessage
 	return byChannel, c.get(ctx, "/satellite", nil, &byChannel)
+}
+
+// staticFacts returns the static weather maps, keyed by map, e.g. "RB_PRC": a file name, a path on
+// pogoda.by or a full URL. Entries that are not text are kept raw and skipped by the caller.
+func (c *pogodaClient) staticFacts(ctx context.Context) (map[string]json.RawMessage, error) {
+	var byKey map[string]json.RawMessage
+	return byKey, c.get(ctx, "/maps/static-fact", nil, &byKey)
 }
 
 func (c *pogodaClient) get(ctx context.Context, path string, query url.Values, out any) error {
@@ -638,4 +647,44 @@ func (s *weatherService) satelliteImage(ctx context.Context) (weatherImage, erro
 		}
 	}
 	return weatherImage{}, fmt.Errorf("%w: satellite channel %s has no jpg", errNoImage, pogodaSatelliteKey)
+}
+
+// staticMapImage returns the static weather map the maps/static-fact list holds under key. Not
+// cached: maps are redrawn during the day. errNoImage means the list has no such map.
+func (s *weatherService) staticMapImage(ctx context.Context, key string) (weatherImage, error) {
+	byKey, err := s.client.staticFacts(ctx)
+	if err != nil {
+		return weatherImage{}, err
+	}
+	var value string
+	if raw, ok := byKey[key]; ok {
+		_ = json.Unmarshal(raw, &value)
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return weatherImage{}, fmt.Errorf("%w: static map %s", errNoImage, key)
+	}
+	return weatherImage{URL: staticMapURL(value)}, nil
+}
+
+// staticMapURL turns a maps/static-fact value into the image's address: a full URL is kept, a path
+// is taken as one on pogoda.by, and a bare file name as one in the static fact maps folder.
+func staticMapURL(value string) string {
+	switch {
+	case strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://"):
+		return value
+	case strings.HasPrefix(value, "/"):
+		return strings.TrimSuffix(pogodaFilesURL, "/files") + value
+	case strings.HasPrefix(value, "files/"):
+		return strings.TrimSuffix(pogodaFilesURL, "files") + value
+	default:
+		return pogodaFilesURL + pogodaStaticFactPath + url.PathEscape(value)
+	}
+}
+
+// staticMap returns a function that loads the static map under key, for handleWeatherImage.
+func staticMap(key string) func(*weatherService, context.Context) (weatherImage, error) {
+	return func(s *weatherService, ctx context.Context) (weatherImage, error) {
+		return s.staticMapImage(ctx, key)
+	}
 }

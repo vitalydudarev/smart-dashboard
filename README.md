@@ -40,7 +40,10 @@ replaced BYR). Every other pair is mocked: each currency follows a deterministic
   temperature and the midday weather (`404` when the station is unknown or has no forecast)
 - `GET /api/weather/radar` – the URL of the Minsk radar's (`UMMN`) latest map on pogoda.by
 - `GET /api/weather/satellite` – the URL of the latest satellite image of channel `012` on pogoda.by
-  (both `404` when the list has no such image)
+- `GET /api/weather/snow-cover`, `GET /api/weather/precipitation/belarus`,
+  `GET /api/weather/precipitation/region` – the URLs of the `SNOW_UKR`, `RB_PRC_SYN` and `RB_PRC` maps
+  from pogoda.by's `maps/static-fact` list
+  (all `404` when the list has no such image)
 
 NBRB requests time out after 5 seconds; the API then answers `502` and the frontend shows `—`. The
 NBRB currency list is cached for a day and every fetched daily rate for the life of the process, so a

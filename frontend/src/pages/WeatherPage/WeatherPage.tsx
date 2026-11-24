@@ -10,8 +10,11 @@ import {
   type WeatherLocation,
   type WeatherStations,
   currentWeatherMapImage,
+  fetchBelarusPrecipitationImage,
   fetchRadarImage,
+  fetchRegionPrecipitationImage,
   fetchSatelliteImage,
+  fetchSnowCoverImage,
   fetchStationForecast,
   fetchStationWeather,
   fetchWeatherStations,
@@ -556,6 +559,9 @@ function WeatherPage() {
               <WeatherImagePanel title="Radar" load={fetchRadarImage} />
               <WeatherImagePanel title="Satellite" load={fetchSatelliteImage} />
               <WeatherImagePanel title="Current weather map" load={currentWeatherMapImage} />
+              <WeatherImagePanel title="Snow cover map" load={fetchSnowCoverImage} />
+              <WeatherImagePanel title="Precipitation (Belarus)" load={fetchBelarusPrecipitationImage} />
+              <WeatherImagePanel title="Precipitation (Region)" load={fetchRegionPrecipitationImage} />
             </div>
           </div>
           <p className="weather-source">Source: {state.result.source.name}</p>

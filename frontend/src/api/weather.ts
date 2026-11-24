@@ -92,6 +92,21 @@ export function fetchSatelliteImage(signal?: AbortSignal): Promise<WeatherImage>
   return getJson('/api/weather/satellite', {}, signal)
 }
 
+/** The snow cover map (SNOW_UKR in pogoda.by's static-fact maps). Never cached. Rejects with a 404 HttpError when there is none. */
+export function fetchSnowCoverImage(signal?: AbortSignal): Promise<WeatherImage> {
+  return getJson('/api/weather/snow-cover', {}, signal)
+}
+
+/** The precipitation map of Belarus (RB_PRC_SYN). Never cached. Rejects with a 404 HttpError when there is none. */
+export function fetchBelarusPrecipitationImage(signal?: AbortSignal): Promise<WeatherImage> {
+  return getJson('/api/weather/precipitation/belarus', {}, signal)
+}
+
+/** The regional precipitation map (RB_PRC). Never cached. Rejects with a 404 HttpError when there is none. */
+export function fetchRegionPrecipitationImage(signal?: AbortSignal): Promise<WeatherImage> {
+  return getJson('/api/weather/precipitation/region', {}, signal)
+}
+
 /** Belhydromet's map of the current weather in Belarus; replaced in place at the same address. */
 const CURRENT_WEATHER_MAP_URL = 'https://pogoda.by/files/maps/static/fact/RB_TNOW.png'
 
