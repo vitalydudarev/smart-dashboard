@@ -72,6 +72,70 @@ function stationPopup(station: WeatherMapStation): HTMLElement {
   return popup
 }
 
+/** Zoom levels per wheel pixel: trackpad pinches (sent as ctrl+wheel) arrive as many small deltas. */
+const PINCH_ZOOM_RATE = 1 / 100
+/** Zoom levels per wheel pixel for a mouse wheel or a two-finger trackpad scroll. */
+const SCROLL_ZOOM_RATE = 1 / 200
+const LINE_HEIGHT_PX = 16
+
+/** Safari's desktop pinch event; not in the DOM typings. */
+type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number }
+
+/**
+ * Zooms the map with the wheel and trackpad pinches, following every delta immediately around
+ * the pointer. Chrome and Firefox report pinches as ctrl+wheel; Safari as gesture events.
+ * Returns a function that removes the listeners.
+ */
+function followWheelZoom(map: L.Map, element: HTMLElement): () => void {
+  const clampZoom = (zoom: number) => Math.min(map.getMaxZoom(), Math.max(map.getMinZoom(), zoom))
+  const zoomAround = (event: { clientX: number; clientY: number }, zoom: number) => {
+    const target = clampZoom(zoom)
+    if (target === map.getZoom()) return
+    map.setZoomAround(map.mouseEventToContainerPoint(event as MouseEvent), target, { animate: false })
+  }
+
+  // Deltas are summed and applied once per frame, so a burst of events costs one redraw.
+  let pending = 0
+  let pointer = { clientX: 0, clientY: 0 }
+  let frame = 0
+  const onWheel = (event: WheelEvent) => {
+    event.preventDefault()
+    const pixels = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * LINE_HEIGHT_PX : event.deltaY
+    // A single mouse-wheel notch moves at most one level.
+    pending += Math.max(-1, Math.min(1, -pixels * (event.ctrlKey ? PINCH_ZOOM_RATE : SCROLL_ZOOM_RATE)))
+    pointer = { clientX: event.clientX, clientY: event.clientY }
+    if (frame) return
+    frame = requestAnimationFrame(() => {
+      frame = 0
+      map.stop()
+      zoomAround(pointer, map.getZoom() + pending)
+      pending = 0
+    })
+  }
+
+  let gestureStartZoom = 0
+  const onGestureStart = (event: Event) => {
+    event.preventDefault()
+    map.stop()
+    gestureStartZoom = map.getZoom()
+  }
+  const onGestureChange = (event: Event) => {
+    event.preventDefault()
+    const gesture = event as GestureEvent
+    zoomAround(gesture, gestureStartZoom + Math.log2(gesture.scale))
+  }
+
+  element.addEventListener('wheel', onWheel, { passive: false })
+  element.addEventListener('gesturestart', onGestureStart)
+  element.addEventListener('gesturechange', onGestureChange)
+  return () => {
+    cancelAnimationFrame(frame)
+    element.removeEventListener('wheel', onWheel)
+    element.removeEventListener('gesturestart', onGestureStart)
+    element.removeEventListener('gesturechange', onGestureChange)
+  }
+}
+
 /** An OpenStreetMap map of every Belarusian station's latest temperature. */
 function WeatherMap() {
   const [state, setState] = useState<MapState>({ status: 'loading' })
@@ -94,7 +158,10 @@ function WeatherMap() {
   useEffect(() => {
     if (!container.current || !stations) return
     // zoomSnap 0 lets fitBounds pick a fractional zoom, so the outermost stations sit right at the edges.
-    const map = L.map(container.current, { zoomSnap: 0, zoomDelta: 0.5 })
+    // Leaflet's own wheel zoom debounces and animates each tiny trackpad delta, which makes pinching
+    // crawl; it is replaced by followWheelZoom below.
+    const map = L.map(container.current, { zoomSnap: 0, zoomDelta: 0.5, scrollWheelZoom: false })
+    const stopWheelZoom = followWheelZoom(map, container.current)
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -132,6 +199,7 @@ function WeatherMap() {
     resize.observe(container.current)
     return () => {
       resize.disconnect()
+      stopWheelZoom()
       map.remove()
     }
   }, [stations])
