@@ -7,7 +7,9 @@ Monorepo for the app.
 
 ## Running locally
 
-Start the backend (listens on `:8080`, override with `PORT`):
+Start the backend (listens on `:8080`, override with `PORT`). Football matches need an
+[API-Football](https://www.api-football.com) key in `API_FOOTBALL_KEY`, set in the environment or in
+`backend/.env` (gitignored; copy `backend/.env.example`):
 
 ```sh
 cd backend && go run .
@@ -44,6 +46,10 @@ replaced BYR). Every other pair is mocked: each currency follows a deterministic
   `GET /api/weather/precipitation/region` – the URLs of the `SNOW_UKR`, `RB_PRC_SYN` and `RB_PRC` maps
   from pogoda.by's `maps/static-fact` list
   (all `404` when the list has no such image)
+- `GET /api/football/matches` – today's and tomorrow's (UTC) Premier League, La Liga and Serie A
+  matches from [API-Football](https://www.api-football.com/documentation-v3), each marked `featured`
+  when Real Madrid, Arsenal, Liverpool, Manchester City, Manchester United, Inter or Milan plays
+  (`503` without a key)
 
 NBRB requests time out after 5 seconds; the API then answers `502` and the frontend shows `—`. The
 NBRB currency list is cached for a day and every fetched daily rate for the life of the process, so a
@@ -57,3 +63,12 @@ opens `/weather`, which lists every station nearest first, with a search box; ea
 weather when it scrolls into view. Observations are cached for 5 minutes. A panel beside the list shows the
 forecast for the selected row (the first one until another is clicked); forecasts are never cached. Below the forecast are the latest radar map
 and satellite image; clicking one opens it full size. Their image lists are never cached either.
+
+Football comes from API-Football's free plan, which allows 100 requests a day and only answers for
+dates from yesterday to tomorrow. Each refresh asks for every fixture on today and tomorrow (two
+requests) and keeps the three leagues, at most once an hour; the result is also saved under the user
+cache directory (`smart-dashboard/football.json`), so restarting the backend does not spend requests
+again. After a failure the previous matches are served and the API is left alone for 10 minutes. The
+dashboard widget lists the featured clubs' live and upcoming matches, live ones first, and opens
+`/football` with every match by league and day. Both load on page load and every hour; scores and
+minutes are as of the last refresh.

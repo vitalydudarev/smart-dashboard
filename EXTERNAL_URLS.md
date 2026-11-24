@@ -40,12 +40,22 @@ The backend does not fetch these; it returns the URLs and the browser loads them
 | `https://pogoda.by/files/satellite/{fileName}` (channel `012`, `.jpg`) | `GET /api/weather/satellite` |
 | `https://pogoda.by/files/maps/static/fact/{fileName}` (or the URL/path `maps/static-fact` gives) | `GET /api/weather/snow-cover`, `GET /api/weather/precipitation/{belarus,region}` |
 
+## API-Football (football matches)
+
+Base URL: `https://v3.football.api-sports.io` — `footballBaseURL` in [backend/football.go](backend/football.go).
+Requests carry the key from `API_FOOTBALL_KEY` in the `x-apisports-key` header.
+
+| Upstream URL | Query parameters | Client method | Used by |
+| --- | --- | --- | --- |
+| `https://v3.football.api-sports.io/fixtures` | `date` | `fixturesOn` | `GET /api/football/matches` |
+
 ## Frontend (loaded directly by the browser)
 
 | URL | Purpose | Where |
 | --- | --- | --- |
 | `https://pogoda.by/files/maps/static/fact/RB_TNOW.png` | Static current-weather map of Belarus | [frontend/src/api/weather.ts](frontend/src/api/weather.ts) |
 | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | Leaflet map tiles | [frontend/src/pages/WeatherPage/WeatherMap.tsx](frontend/src/pages/WeatherPage/WeatherMap.tsx) |
+| `https://media.api-sports.io/football/{leagues,teams}/{id}.png` | League and team logos (URLs come from API-Football) | [frontend/src/football/MatchRow.tsx](frontend/src/football/MatchRow.tsx), [frontend/src/pages/FootballPage/FootballPage.tsx](frontend/src/pages/FootballPage/FootballPage.tsx) |
 | `https://www.openstreetmap.org/copyright` | Map attribution link | [frontend/src/pages/WeatherPage/WeatherMap.tsx](frontend/src/pages/WeatherPage/WeatherMap.tsx) |
 
 ## Local development

@@ -18,6 +18,8 @@ type server struct {
 	providers []rateProvider
 	// Serves /api/weather; nil leaves weather unavailable.
 	weather *weatherService
+	// Serves /api/football; nil leaves football unavailable.
+	football *footballService
 }
 
 func newServer(providers ...rateProvider) *server {
@@ -39,6 +41,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/weather/snow-cover", s.handleWeatherImage(staticMap("SNOW_UKR")))
 	mux.HandleFunc("GET /api/weather/precipitation/belarus", s.handleWeatherImage(staticMap("RB_PRC_SYN")))
 	mux.HandleFunc("GET /api/weather/precipitation/region", s.handleWeatherImage(staticMap("RB_PRC")))
+	mux.HandleFunc("GET /api/football/matches", s.handleFootballMatches)
 	return mux
 }
 
@@ -349,6 +352,41 @@ func (s *server) handleWeatherImage(latest func(*weatherService, context.Context
 		}
 		writeJSON(w, http.StatusOK, body)
 	}
+}
+
+type footballMatchesResponse struct {
+	// The leagues shown, in display order.
+	Leagues []footballLeague `json:"leagues"`
+	// Every match of those leagues on the days covered, earliest first.
+	Matches []footballMatch `json:"matches"`
+	// The UTC days covered, as YYYY-MM-DD.
+	From string `json:"from"`
+	To   string `json:"to"`
+	// When the matches were fetched from API-Football; scores and statuses are as of then.
+	UpdatedAt time.Time `json:"updatedAt"`
+	Source    Source    `json:"source"`
+}
+
+// GET /api/football/matches: today's and tomorrow's matches of the shown leagues, refreshed hourly.
+func (s *server) handleFootballMatches(w http.ResponseWriter, r *http.Request) {
+	snapshot, err := s.football.matches(r.Context())
+	if errors.Is(err, errFootballNotConfigured) {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	if err != nil {
+		log.Printf("%s: %v", footballSource.ID, err)
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("%s is unavailable", footballSource.Name))
+		return
+	}
+	writeJSON(w, http.StatusOK, footballMatchesResponse{
+		Leagues:   footballLeagues,
+		Matches:   snapshot.Matches,
+		From:      snapshot.From,
+		To:        snapshot.To,
+		UpdatedAt: snapshot.FetchedAt,
+		Source:    footballSource,
+	})
 }
 
 // weatherParams reads the optional lat/lng, defaulting to Minsk. It writes the error response and

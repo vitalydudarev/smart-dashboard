@@ -1,0 +1,102 @@
+.match-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-3);
+  min-width: 0;
+}
+
+.match-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.match-team {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  min-width: 0;
+}
+
+.match-team-logo {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.match-team-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-row--featured .match-team-name {
+  font-weight: 600;
+}
+
+.match-state {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.match-score {
+  font-size: var(--app-text-md);
+  font-weight: 600;
+}
+
+.match-kickoff {
+  font-weight: 600;
+}
+
+.match-day {
+  color: var(--app-fg-muted);
+  font-size: var(--app-text-xs);
+}
+
+.match-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-surface-sunken);
+  color: var(--app-fg-muted);
+  font-size: var(--app-text-xs);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.match-badge--live {
+  background: var(--app-danger-soft);
+  color: var(--app-danger);
+}
+
+.match-badge--warning {
+  max-width: 9rem;
+  overflow: hidden;
+  background: var(--app-warning-soft);
+  color: var(--app-warning);
+  text-overflow: ellipsis;
+}
+
+.match-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentcolor;
+  animation: match-live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes match-live-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
